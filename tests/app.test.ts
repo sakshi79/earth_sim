@@ -7,7 +7,7 @@ import {
   ELEVATION_WIDTH,
   waterness,
 } from '../src/data/globeMaps.ts';
-import { placeLabel } from '../src/data/nominatim.ts';
+import { placeLabel, rankResults, simplifyQuery } from '../src/data/nominatim.ts';
 import { formatElevation, formatLatLon } from '../src/format.ts';
 import { encodeTerrarium } from '../src/geo/tiles.ts';
 import { featuredPlaces } from '../src/places.ts';
@@ -51,6 +51,23 @@ describe('placeLabel', () => {
 
   it('returns null for open ocean', () => {
     expect(placeLabel({ error: 'Unable to geocode' })).toBeNull();
+  });
+});
+
+describe('search ranking', () => {
+  it('drops a leading generic word', () => {
+    expect(simplifyQuery('Mount Kilimanjaro')).toBe('Kilimanjaro');
+    expect(simplifyQuery('Mt. Fuji')).toBe('Fuji');
+    expect(simplifyQuery('Lake Baikal')).toBe('Lake Baikal');
+  });
+
+  it('puts the most important match first and removes duplicates', () => {
+    const ranked = rankResults([
+      { place_id: 1, lat: '-3.2', lon: '37.3', importance: 0, display_name: 'Mount-Kilimanjaro Primary School' },
+      { place_id: 2, lat: '-3.07', lon: '37.35', importance: 0.561, display_name: 'Kilimanjaro, Northern Zone, Tanzania' },
+      { place_id: 2, lat: '-3.07', lon: '37.35', importance: 0.561, display_name: 'Kilimanjaro, Northern Zone, Tanzania' },
+    ]);
+    expect(ranked.map((r) => r.place_id)).toEqual([2, 1]);
   });
 });
 

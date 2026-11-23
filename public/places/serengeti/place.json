@@ -1,0 +1,13 @@
+{
+  "id": "serengeti",
+  "name": "Serengeti",
+  "lat": -2.45,
+  "lon": 34.83,
+  "zoom": 13,
+  "tiles": 3,
+  "x0": 4887,
+  "y0": 4150,
+  "imageryZoom": 14,
+  "imagery": "EOxCloudless 2025 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2025), CC BY-NC-SA 4.0",
+  "elevation": "AWS Terrain Tiles (SRTM, GMTED, ETOPO1 and others)"
+}

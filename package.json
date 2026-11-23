@@ -14,7 +14,8 @@
     "preview": "vite preview",
     "typecheck": "tsc",
     "test": "vitest run",
-    "globe-assets": "node scripts/build-globe-assets.mjs"
+    "globe-assets": "node scripts/build-globe-assets.mjs",
+    "build-places": "node scripts/build-places.mjs"
   },
   "dependencies": {
     "three": "^0.187.0",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/three": "^0.187.0",
+    "jpeg-js": "^0.4.4",
     "pngjs": "^7.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",

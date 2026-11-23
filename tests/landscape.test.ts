@@ -10,6 +10,8 @@ const samples: Array<[string, number, [number, number, number], number, Landscap
   ['Gobi', 43, [121, 104, 74], 1580, 'desert'],
   ['Australian outback', -25, [115, 73, 39], 650, 'desert'],
   ['Everest', 27.988, [176, 175, 170], 5870, 'mountain'],
+  ['Everest snowfield (sharper colour map)', 27.988, [232, 234, 236], 5870, 'mountain'],
+  ['Patagonian ice field', -49, [235, 238, 240], 1500, 'ice'],
   ['Tibet', 32, [128, 111, 78], 4840, 'mountain'],
   ['Andes', -15, [121, 97, 62], 3990, 'mountain'],
   ['Matterhorn', 45.976, [64, 69, 50], 2070, 'mountain'],

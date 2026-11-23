@@ -17,6 +17,8 @@ export interface GlobeUiHandlers {
   onFeatured: (place: Place) => void;
   onClosePreview: () => void;
   onCopyLink: () => void;
+  onReset: () => void;
+  onVisit: () => void;
 }
 
 export class GlobeUi {
@@ -32,6 +34,7 @@ export class GlobeUi {
   private readonly previewElevation: HTMLElement;
   private readonly previewLandscape: HTMLElement;
   private readonly copyButton: HTMLButtonElement;
+  private readonly visitButton: HTMLButtonElement;
 
   constructor(root: HTMLElement, places: readonly Place[], handlers: GlobeUiHandlers) {
     root.replaceChildren();
@@ -58,7 +61,15 @@ export class GlobeUi {
     });
     const searchBox = el('div', 'search-box');
     searchBox.append(form, this.results);
-    topbar.append(brand, searchBox);
+    const reset = el('button', 'button reset panel', '⟲ Reset');
+    reset.type = 'button';
+    reset.title = 'Reset the view';
+    reset.setAttribute('aria-label', 'Reset the view');
+    reset.addEventListener('click', () => {
+      this.clearSearch();
+      handlers.onReset();
+    });
+    topbar.append(brand, searchBox, reset);
 
     // Featured places, grouped. Open by default on wide screens.
     const featured = el('details', 'featured panel');
@@ -104,14 +115,13 @@ export class GlobeUi {
       el('dt', '', 'Likely'), this.previewLandscape,
     );
     const actions = el('div', 'actions');
-    const visit = el('button', 'button primary', 'Visit');
-    visit.type = 'button';
-    visit.disabled = true;
-    visit.title = 'Visiting places arrives in the next milestone';
+    this.visitButton = el('button', 'button primary', 'Visit');
+    this.visitButton.type = 'button';
+    this.visitButton.addEventListener('click', () => handlers.onVisit());
     this.copyButton = el('button', 'button', 'Copy link');
     this.copyButton.type = 'button';
     this.copyButton.addEventListener('click', () => handlers.onCopyLink());
-    actions.append(visit, this.copyButton);
+    actions.append(this.visitButton, this.copyButton);
     this.preview.append(close, this.previewTitle, this.previewSubtitle, facts, actions);
 
     this.hover = el('p', 'hover');
@@ -143,6 +153,11 @@ export class GlobeUi {
 
   setCredits(lines: readonly string[]): void {
     this.credits.textContent = lines.join(' · ');
+  }
+
+  clearSearch(): void {
+    this.searchInput.value = '';
+    this.results.hidden = true;
   }
 
   showSearching(): void {
@@ -190,6 +205,15 @@ export class GlobeUi {
 
   hidePreview(): void {
     this.preview.hidden = true;
+  }
+
+  currentTitle(): string {
+    return this.previewTitle.textContent ?? '';
+  }
+
+  setVisitBusy(busy: boolean): void {
+    this.visitButton.disabled = busy;
+    this.visitButton.textContent = busy ? 'Loading…' : 'Visit';
   }
 
   flashCopied(ok: boolean): void {

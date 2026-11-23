@@ -79,7 +79,7 @@ Every request goes through an adapter with caching, per-host rate limits and gra
 
 ## 6. Features
 
-**Globe.** Real-sun day/night with city lights, ocean glint, no glow ring around the Earth (owner's preference). The bundled Blue Marble shows from afar; tiled imagery fades in when zoomed close, capped at z15. Hovering shows elevation without network calls; clicking looks up the place name.
+**Globe.** Real-sun day/night with city lights, atmosphere glow, ocean glint. The bundled Blue Marble shows from afar; tiled imagery fades in when zoomed close, capped at z15. Hovering shows elevation without network calls; clicking looks up the place name.
 
 **Loading a place.** 3×3 z13 elevation tiles (~15 km, ~19 m per sample) and z14 imagery (36 tiles, ~10 m/px; z15 on High quality). Elevation is required; imagery and species may fail without blocking the visit. Ready in under 8 s on a first visit, under 2 s cached.
 
@@ -158,7 +158,7 @@ Coordinates to be checked in M1.
 | # | Milestone | Done when |
 |---|---|---|
 | M0 | Setup | Scaffold, tests, Pages workflow, globe assets, Esri account and site-locked key; spinning globe live |
-| M1 | Globe | Day/night, tiled zoom, picking, search, featured list, preview, deep links |
+| M1 | Globe | Day/night, atmosphere, tiled zoom, picking, search, featured list, preview, deep links, reset |
 | M2 | Terrain | Tiles → mesh + imagery, sky, sea, fly-down loading, back to globe; featured places pre-built |
 | M3 | Player and camera | Animated character; walk/run/jump/swim/dive; keyboard/mouse and touch controls; Follow and Scout; HUD; time slider |
 | M4 | Landscapes | Classifier tuned; vegetation; detail textures |

@@ -5,13 +5,25 @@ import { reverseGeocode, searchPlaces } from './data/nominatim.ts';
 import { formatElevation, formatLatLon } from './format.ts';
 import { guessLandscape, landscapeLabels, type LandscapeType } from './geo/landscape.ts';
 import { oceanName } from './geo/oceans.ts';
+import { isVisitable } from './geo/tiles.ts';
 import { GlobeView, type GlobeHit } from './globe/GlobeView.ts';
 import { featuredPlaces, type Place } from './places.ts';
 import { formatVisitHash, parseVisitHash } from './router.ts';
 import { GlobeUi } from './ui/globeUi.ts';
+import { LocationUi } from './ui/locationUi.ts';
+import { loadPlace, TerrainUnavailableError, type LoadProgress } from './world/loadPlace.ts';
+import { LocationView } from './world/LocationView.ts';
+import { nearOcean, terrainWindow } from './world/terrainWindow.ts';
 
 const app = document.getElementById('app') as HTMLElement;
 const overlay = document.getElementById('overlay') as HTMLElement;
+const world = document.getElementById('world') as HTMLElement;
+const worldUi = document.getElementById('world-ui') as HTMLElement;
+const fadeLayer = document.getElementById('fade') as HTMLElement;
+
+const ELEVATION_CREDIT = 'Elevation: AWS Terrain Tiles (SRTM, GMTED, ETOPO1 and others)';
+/** Camera altitude for the dive toward a place before it opens (globe radii; ~25 km). */
+const DIVE_ALTITUDE = 0.004;
 
 function hasWebGL2(): boolean {
   try {
@@ -28,17 +40,53 @@ interface SelectOptions {
   altitude?: number;
 }
 
+interface Selection {
+  lat: number;
+  lon: number;
+  place?: Place;
+  landscape: LandscapeType | null;
+}
+
+/** Fades the whole screen to black (true) or back (false). */
+function fade(toBlack: boolean): Promise<void> {
+  fadeLayer.classList.toggle('on', toBlack);
+  return new Promise((resolve) => setTimeout(resolve, 380));
+}
+
+function progressText(p: LoadProgress): string {
+  return p.stage === 'terrain' ? `Loading terrain… ${p.done}/${p.total}` : `Loading imagery… ${p.done}/${p.total}`;
+}
+
 async function boot(): Promise<void> {
+  if (!hasWebGL2()) {
+    const noop = (): void => {};
+    const ui = new GlobeUi(overlay, featuredPlaces, {
+      onSearch: noop, onSearchResult: noop, onFeatured: noop, onClosePreview: noop,
+      onCopyLink: noop, onReset: noop, onVisit: noop,
+    });
+    ui.setCredits(credits);
+    ui.setStatus('Earth Sim needs WebGL 2, which this browser or device does not support.');
+    return;
+  }
+
+  // The UI is created first, but every handler below runs only after `globe` exists (same tick).
   let maps: GlobeMaps | null = null;
   let selection = 0; // ignores place-name answers for earlier picks
-  let selected: { lat: number; lon: number } | null = null;
+  let selected: Selection | null = null;
   let tilesVisible = false;
+  let state: 'globe' | 'loading' | 'location' = 'globe';
+  let location: LocationView | null = null;
 
   const ui = new GlobeUi(overlay, featuredPlaces, {
     onSearch: (query) => void runSearch(query),
     onSearchResult: (hit) => select(hit.lat, hit.lon, { label: hit.label, altitude: 0.8 }),
     onFeatured: (place) => select(place.lat, place.lon, { place, altitude: 0.8 }),
     onClosePreview: () => closePreview(),
+    onReset: () => {
+      closePreview();
+      globe.resetView();
+    },
+    onVisit: () => void visit(),
     onCopyLink: () => {
       if (!selected) return;
       // The address only carries a place when shared, so a plain reload returns to the spinning globe.
@@ -50,13 +98,12 @@ async function boot(): Promise<void> {
       );
     },
   });
+  const locationUi = new LocationUi(worldUi, {
+    onBack: () => void backToGlobe(),
+    onTimeChange: (hours) => location?.setSolarHours(hours),
+  });
   const updateCredits = (): void => ui.setCredits(tilesVisible ? [liveImagery.credit, ...credits] : credits);
   updateCredits();
-
-  if (!hasWebGL2()) {
-    ui.setStatus('Earth Sim needs WebGL 2, which this browser or device does not support.');
-    return;
-  }
 
   const globe = new GlobeView(app, liveImagery.url, {
     onHover: (hit) => ui.setHover(hit ? hoverText(hit) : null),
@@ -83,10 +130,11 @@ async function boot(): Promise<void> {
   }
 
   function select(lat: number, lon: number, options: SelectOptions = {}): void {
+    if (state !== 'globe') return;
     const token = ++selection;
-    selected = { lat, lon };
-    globe.select(lat, lon, options.altitude);
     const landscape = landscapeAt(lat, lon);
+    selected = { lat, lon, place: options.place, landscape };
+    globe.select(lat, lon, options.altitude);
     ui.showPreview({
       title: options.place?.name ?? options.label ?? 'Finding the name…',
       subtitle: options.place?.region,
@@ -125,11 +173,86 @@ async function boot(): Promise<void> {
     }
   }
 
+  /** Dives toward the selected place while its data loads, then fades into the 3D scene. */
+  async function visit(): Promise<void> {
+    const target = selected;
+    if (state !== 'globe' || !target) return;
+    if (!isVisitable(target.lat)) {
+      ui.setStatus('Places this close to the poles can’t be visited yet: the map tiles stop at ±85°.');
+      setTimeout(() => ui.setStatus(''), 5000);
+      return;
+    }
+    state = 'loading';
+    ui.setVisitBusy(true);
+    const shown = ui.currentTitle();
+    const title = shown && shown !== 'Finding the name…' ? shown : formatLatLon(target.lat, target.lon);
+    globe.select(target.lat, target.lon, DIVE_ALTITUDE);
+    try {
+      const [data] = await Promise.all([
+        loadPlace(target.lat, target.lon, {
+          placeId: target.place?.id,
+          onProgress: (p) => ui.setStatus(progressText(p)),
+        }),
+        globe.whenSettled(),
+      ]);
+      const oceanNearby = maps ? nearOcean(terrainWindow(target.lat, target.lon), maps.elevationAt) : false;
+      await fade(true);
+      globe.pause();
+      app.hidden = overlay.hidden = true;
+      world.hidden = false;
+      location = new LocationView(world, data, { oceanNearby });
+      location.start();
+      const landscape = target.landscape ? landscapeLabels[target.landscape] : null;
+      locationUi.show({
+        title,
+        subtitle: [landscape && `Likely ${landscape.toLowerCase()}`, formatLatLon(target.lat, target.lon)]
+          .filter(Boolean)
+          .join(' · '),
+        credits: [
+          ...(data.imageryCredit ? [data.imageryCredit] : []),
+          ELEVATION_CREDIT,
+          'Place names © OpenStreetMap contributors',
+        ],
+        solarHours: location.solarHoursNow,
+      });
+      ui.setStatus('');
+      state = 'location';
+      await fade(false);
+    } catch (error) {
+      console.error(error);
+      state = 'globe';
+      ui.setStatus(
+        error instanceof TerrainUnavailableError
+          ? 'Elevation data is unavailable for this place right now. Try again in a moment.'
+          : 'Could not open this place. Try again in a moment.',
+      );
+      setTimeout(() => ui.setStatus(''), 6000);
+    } finally {
+      ui.setVisitBusy(false);
+    }
+  }
+
+  async function backToGlobe(): Promise<void> {
+    if (state !== 'location') return;
+    state = 'loading';
+    await fade(true);
+    location?.dispose();
+    location = null;
+    locationUi.hide();
+    world.hidden = true;
+    app.hidden = overlay.hidden = false;
+    globe.start();
+    if (selected) globe.select(selected.lat, selected.lon, 0.05); // rise back above the place
+    state = 'globe';
+    await fade(false);
+  }
+
   function openFromHash(): void {
     const target = parseVisitHash(window.location.hash);
-    if (!target) return;
+    if (!target || state !== 'globe') return;
     const place = featuredPlaces.find((p) => Math.abs(p.lat - target.lat) < 1e-4 && Math.abs(p.lon - target.lon) < 1e-4);
     select(target.lat, target.lon, { place, altitude: 0.8 });
+    void visit();
   }
 
   ui.setStatus('Loading Earth…');

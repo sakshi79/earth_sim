@@ -1,6 +1,7 @@
 // Coarse whole-Earth lookups from the bundled textures: elevation (Terrarium-encoded PNG, 1024×512)
 // and the colour of the NASA day image (2048×1024). No network calls after load.
 import { decodeTerrarium } from '../geo/tiles.ts';
+import { decodeRgba, fetchBlob } from './images.ts';
 
 export const ELEVATION_WIDTH = 1024;
 export const ELEVATION_HEIGHT = 512;
@@ -52,29 +53,8 @@ export function createGlobeMaps(elevationRgba: ArrayLike<number>, colorRgba: Arr
 
 export async function loadGlobeMaps(elevationUrl: string, dayUrl: string): Promise<GlobeMaps> {
   const [elevation, color] = await Promise.all([
-    readPixels(elevationUrl, ELEVATION_WIDTH, ELEVATION_HEIGHT),
-    readPixels(dayUrl, COLOR_WIDTH, COLOR_HEIGHT),
+    fetchBlob(elevationUrl).then((blob) => decodeRgba(blob, ELEVATION_WIDTH, ELEVATION_HEIGHT)),
+    fetchBlob(dayUrl).then((blob) => decodeRgba(blob, COLOR_WIDTH, COLOR_HEIGHT)),
   ]);
-  return createGlobeMaps(elevation, color);
-}
-
-/** Decodes an image to RGBA at the given size without colour conversion. */
-async function readPixels(url: string, width: number, height: number): Promise<Uint8ClampedArray> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`HTTP ${response.status} for ${url}`);
-  const bitmap = await createImageBitmap(await response.blob(), {
-    colorSpaceConversion: 'none',
-    premultiplyAlpha: 'none',
-    resizeWidth: width,
-    resizeHeight: height,
-    resizeQuality: 'medium',
-  });
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  if (!context) throw new Error('2D canvas unavailable');
-  context.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  return context.getImageData(0, 0, width, height).data;
+  return createGlobeMaps(elevation.data, color.data);
 }

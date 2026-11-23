@@ -1,0 +1,13 @@
+{
+  "id": "deadvlei",
+  "name": "Deadvlei",
+  "lat": -24.76,
+  "lon": 15.29,
+  "zoom": 13,
+  "tiles": 3,
+  "x0": 4442,
+  "y0": 4676,
+  "imageryZoom": 14,
+  "imagery": "EOxCloudless 2025 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2025), CC BY-NC-SA 4.0",
+  "elevation": "AWS Terrain Tiles (SRTM, GMTED, ETOPO1 and others)"
+}

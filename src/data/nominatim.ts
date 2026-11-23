@@ -10,8 +10,10 @@ interface NominatimAddress {
 }
 
 export interface NominatimResult {
+  place_id?: number;
   lat: string;
   lon: string;
+  importance?: number;
   name?: string;
   display_name?: string;
   address?: NominatimAddress;
@@ -48,10 +50,37 @@ export async function reverseGeocode(lat: number, lon: number): Promise<string |
   return placeLabel(await client.getJson<NominatimResult>(url));
 }
 
+/** OpenStreetMap often names natural features without the generic word ("Kilimanjaro"). */
+export function simplifyQuery(query: string): string {
+  return query.replace(/^\s*(mount|mt\.?|mountain|the)\s+/i, '').trim();
+}
+
+/** Most important first, duplicates removed, at most `limit`. */
+export function rankResults(results: readonly NominatimResult[], limit = 6): NominatimResult[] {
+  const seen = new Set<number | string>();
+  return [...results]
+    .sort((a, b) => (b.importance ?? 0) - (a.importance ?? 0))
+    .filter((r) => {
+      const key = r.place_id ?? `${r.lat},${r.lon}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, limit);
+}
+
 export async function searchPlaces(query: string): Promise<SearchHit[]> {
-  const url = `${sources.nominatim}/search?q=${encodeURIComponent(query)}&format=jsonv2&limit=6&addressdetails=1&accept-language=en`;
-  const results = await client.getJson<NominatimResult[]>(url);
-  return results.map((r) => ({
+  const search = (q: string): Promise<NominatimResult[]> =>
+    client.getJson<NominatimResult[]>(
+      `${sources.nominatim}/search?q=${encodeURIComponent(q)}&format=jsonv2&limit=8&addressdetails=1&accept-language=en`,
+    );
+  let results = await search(query);
+  // Only minor matches (e.g. "Mount Kilimanjaro" → a school): also try without the generic word.
+  const simpler = simplifyQuery(query);
+  if (Math.max(0, ...results.map((r) => r.importance ?? 0)) < 0.2 && simpler && simpler !== query.trim()) {
+    results = [...results, ...(await search(simpler))];
+  }
+  return rankResults(results).map((r) => ({
     label: r.display_name?.split(',').slice(0, 3).map((s) => s.trim()).join(', ') ?? placeLabel(r) ?? query,
     lat: Number(r.lat),
     lon: Number(r.lon),

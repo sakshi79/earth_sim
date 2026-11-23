@@ -1,0 +1,13 @@
+{
+  "id": "erg-chebbi",
+  "name": "Erg Chebbi dunes",
+  "lat": 31.15,
+  "lon": -3.97,
+  "zoom": 13,
+  "tiles": 3,
+  "x0": 4004,
+  "y0": 3348,
+  "imageryZoom": 14,
+  "imagery": "EOxCloudless 2025 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2025), CC BY-NC-SA 4.0",
+  "elevation": "AWS Terrain Tiles (SRTM, GMTED, ETOPO1 and others)"
+}

@@ -1,0 +1,13 @@
+{
+  "id": "everest",
+  "name": "Mount Everest",
+  "lat": 27.988,
+  "lon": 86.925,
+  "zoom": 13,
+  "tiles": 3,
+  "x0": 6073,
+  "y0": 3431,
+  "imageryZoom": 14,
+  "imagery": "EOxCloudless 2025 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2025), CC BY-NC-SA 4.0",
+  "elevation": "AWS Terrain Tiles (SRTM, GMTED, ETOPO1 and others)"
+}

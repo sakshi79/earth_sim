@@ -45,7 +45,8 @@ export function guessLandscape({ lat, elevation, rgb }: LandscapeInput): Landsca
 
   const looksLikeWater = b > r + 15 && b >= g;
   if (elevation < -500 || looksLikeWater) return elevation < -200 ? 'ocean' : 'coast';
-  if (brightness > 200 && saturation < 0.12) return 'ice';
+  // Snow-white is an ice sheet at high latitude or low elevation; elsewhere it is a snowy peak.
+  if (brightness > 200 && saturation < 0.12 && (absLat >= 60 || elevation <= 2000)) return 'ice';
   if (elevation > 2000) return 'mountain';
   if ((greenness < -0.06 && brightness > 95) || greenness < -0.18) return 'desert';
   if (absLat >= 60 && greenness < 0.1) return 'tundra';

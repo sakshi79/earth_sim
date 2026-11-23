@@ -6,7 +6,7 @@ import { latLonToVector, vectorToLatLon, type LatLon } from '../geo/sphere.ts';
 import { subsolarPoint } from '../geo/sun.ts';
 import type { Place } from '../places.ts';
 import { createPin, createPlaceMarkers, placePin } from './markers.ts';
-import { createNightLightsMaterial } from './shaders.ts';
+import { createAtmosphereMaterial, createSurfaceOverlayMaterial } from './shaders.ts';
 
 /** Vertical field of view on landscape screens, in degrees. */
 const BASE_FOV = 40;
@@ -19,6 +19,7 @@ const START_ALTITUDE = 2.4;
 /** Below this altitude, satellite tiles replace the bundled image (from zoom level 5). */
 const TILE_ALTITUDE = 0.3;
 const MAX_TILE_LEVEL = 15;
+const ATMOSPHERE_RADIUS = 1.12;
 const CLICK_MOVE_PX = 6;
 const CLICK_MAX_MS = 500;
 const DOUBLE_CLICK_MS = 350;
@@ -46,7 +47,7 @@ interface Flight {
 }
 
 /**
- * The globe screen: NASA imagery with real-sun day/night and city lights, zoomable satellite tiles,
+ * The globe screen: NASA imagery with real-sun day/night, city lights and atmosphere, zoomable satellite tiles,
  * featured-place markers, picking and camera flights. The Earth spins slowly until a place is picked.
  */
 export class GlobeView {
@@ -59,7 +60,8 @@ export class GlobeView {
   /** Spins about +Y. Everything fixed to the surface (and the sun) lives in here. */
   private readonly globe = new THREE.Group();
   private readonly earth: THREE.Mesh<THREE.SphereGeometry, THREE.MeshPhongMaterial>;
-  private nightLights: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial> | null = null;
+  private overlay: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial> | null = null;
+  private readonly atmosphere: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>;
   private readonly sun = new THREE.DirectionalLight(0xffffff, 2.6);
   private readonly ambient = new THREE.AmbientLight(0xffffff, 0.06);
   private readonly tiles: SlippyMapGlobe;
@@ -73,6 +75,7 @@ export class GlobeView {
 
   private targetAltitude = START_ALTITUDE;
   private flight: Flight | null = null;
+  private flightDone: Array<() => void> = [];
   private spinPaused = false;
   private dragging = false;
   private lastFrameMs: number | null = null;
@@ -125,11 +128,16 @@ export class GlobeView {
     this.globe.add(this.tiles);
     this.globe.add(this.pin);
     this.scene.add(this.globe);
+
+    this.atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(ATMOSPHERE_RADIUS, 96, 48),
+      createAtmosphereMaterial(ATMOSPHERE_RADIUS),
+    );
+    this.scene.add(this.atmosphere);
     this.scene.add(createStars(3000, 40));
 
-    // Start looking at the day side, with the evening terminator near the right-hand edge.
-    const s = subsolarPoint(new Date());
-    const start = latLonToVector(THREE.MathUtils.clamp(s.lat + 10, -50, 50), s.lon + 35);
+    const home = homeView();
+    const start = latLonToVector(home.lat, home.lon);
     this.camera.position.set(start.x, start.y, start.z).setLength(1 + START_ALTITUDE);
     this.camera.lookAt(0, 0, 0);
 
@@ -165,10 +173,10 @@ export class GlobeView {
     const night = loader.loadAsync(nightUrl).then((texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = maxAnisotropy;
-      this.nightLights = new THREE.Mesh(new THREE.SphereGeometry(1, 192, 96), createNightLightsMaterial(texture));
-      this.nightLights.rotation.y = -Math.PI / 2;
-      this.nightLights.renderOrder = 2;
-      this.globe.add(this.nightLights);
+      this.overlay = new THREE.Mesh(new THREE.SphereGeometry(1, 192, 96), createSurfaceOverlayMaterial(texture));
+      this.overlay.rotation.y = -Math.PI / 2;
+      this.overlay.renderOrder = 2;
+      this.globe.add(this.overlay);
     });
     await Promise.all([day, night]);
   }
@@ -208,12 +216,30 @@ export class GlobeView {
     this.spinPaused = false;
   }
 
+  /** Back to the starting view: no pin, whole Earth facing the sun, spinning again. */
+  resetView(): void {
+    this.clearSelection();
+    const home = homeView();
+    this.flyTo(home.lat, home.lon, START_ALTITUDE);
+  }
+
   altitude(): number {
     return this.camera.position.length() - 1;
   }
 
   start(): void {
+    this.lastFrameMs = null;
     this.renderer.setAnimationLoop((timeMs: number) => this.frame(timeMs));
+  }
+
+  /** Stops rendering (while a place is open); `start()` resumes. */
+  pause(): void {
+    this.renderer.setAnimationLoop(null);
+  }
+
+  /** Resolves when the current camera flight (if any) has landed. */
+  whenSettled(): Promise<void> {
+    return this.flight ? new Promise((resolve) => this.flightDone.push(resolve)) : Promise.resolve();
   }
 
   dispose(): void {
@@ -226,6 +252,8 @@ export class GlobeView {
   }
 
   private flyTo(lat: number, lon: number, altitude: number): void {
+    // A new flight replaces the old one; anyone waiting on the old one is released.
+    for (const resolve of this.flightDone.splice(0)) resolve();
     this.globe.updateMatrixWorld();
     const local = latLonToVector(lat, lon);
     const to = this.globe.localToWorld(new THREE.Vector3(local.x, local.y, local.z)).normalize();
@@ -276,11 +304,17 @@ export class GlobeView {
     // layer, which is too coarse (~10 km per pixel) to look right over sharp tiles.
     const closeness = 1 - THREE.MathUtils.smoothstep(altitude, 0.01, 0.3);
     this.ambient.intensity = 0.06 + 0.5 * closeness;
-    if (this.nightLights) {
-      const uniforms = this.nightLights.material.uniforms;
-      this.sun.getWorldPosition(uniforms.sunDirection.value).normalize();
+    const sunDirection = this.sun.getWorldPosition(new THREE.Vector3()).normalize();
+    if (this.overlay) {
+      const uniforms = this.overlay.material.uniforms;
+      uniforms.sunDirection.value.copy(sunDirection);
       uniforms.nightIntensity.value = 1.6 * THREE.MathUtils.smoothstep(altitude, 0.005, 0.1);
+      uniforms.hazeStrength.value = THREE.MathUtils.smoothstep(altitude, 0.05, 0.4);
     }
+    const atmosphere = this.atmosphere.material.uniforms;
+    atmosphere.sunDirection.value.copy(sunDirection);
+    atmosphere.centerView.value.set(0, 0, 0).applyMatrix4(this.camera.matrixWorldInverse);
+    atmosphere.opacity.value = THREE.MathUtils.smoothstep(altitude, 0.15, 0.45);
     if (this.pin.visible) this.pin.scale.setScalar(altitude * 0.02);
     if (this.hoverAt) {
       this.events.onHover?.(this.pick(this.hoverAt.x, this.hoverAt.y));
@@ -306,6 +340,7 @@ export class GlobeView {
         this.flight = null;
         this.targetAltitude = f.toAlt;
         this.controls.enabled = true;
+        for (const resolve of this.flightDone.splice(0)) resolve();
       }
     } else {
       const current = this.altitude();
@@ -451,6 +486,12 @@ export class GlobeView {
         : THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) / aspect));
     this.camera.updateProjectionMatrix();
   }
+}
+
+/** Where the camera starts: the day side, with the evening terminator near the right-hand edge. */
+function homeView(): LatLon {
+  const s = subsolarPoint(new Date());
+  return { lat: THREE.MathUtils.clamp(s.lat + 10, -50, 50), lon: s.lon + 35 };
 }
 
 function createStars(count: number, radius: number): THREE.Points {

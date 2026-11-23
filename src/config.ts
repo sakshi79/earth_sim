@@ -2,7 +2,8 @@
 // source was verified on 2026-11-22; see docs/SPEC.md section 5.
 
 /** ArcGIS Location Platform key, public by design and restricted to the site's domain. */
-export const ESRI_API_KEY: string = import.meta.env.VITE_ESRI_API_KEY ?? '';
+// `?.` keeps this module loadable in Node (build scripts), where Vite's import.meta.env is absent.
+export const ESRI_API_KEY: string = import.meta.env?.VITE_ESRI_API_KEY ?? '';
 
 export type TileUrl = (z: number, x: number, y: number) => string;
 
