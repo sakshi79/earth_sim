@@ -17,7 +17,8 @@
     "globe-assets": "node scripts/build-globe-assets.mjs"
   },
   "dependencies": {
-    "three": "^0.187.0"
+    "three": "^0.187.0",
+    "three-slippy-map-globe": "^1.0.6"
   },
   "devDependencies": {
     "@types/three": "^0.187.0",
