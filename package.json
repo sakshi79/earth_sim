@@ -1,0 +1,29 @@
+{
+  "name": "earth-sim",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Browser-based 3D Earth: pick any place, explore it as a player, collect species, climb and dive.",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "globe-assets": "node scripts/build-globe-assets.mjs"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "pngjs": "^7.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

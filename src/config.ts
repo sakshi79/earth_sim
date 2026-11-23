@@ -1,0 +1,36 @@
+// Data sources, bundled assets and credits. Browser access (CORS) for every runtime
+// source was verified on 2026-11-22; see docs/SPEC.md section 5.
+
+/** ArcGIS Location Platform key, public by design and restricted to the site's domain. */
+export const ESRI_API_KEY: string = import.meta.env.VITE_ESRI_API_KEY ?? '';
+
+type TileUrl = (z: number, x: number, y: number) => string;
+
+export const sources = {
+  terrarium: ((z, x, y) =>
+    `https://s3.amazonaws.com/elevation-tiles-prod/terrarium/${z}/${x}/${y}.png`) satisfies TileUrl,
+  // Pre-built places and fallback imagery (CC BY-NC-SA 4.0, non-commercial).
+  sentinel2: ((z, x, y) =>
+    `https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless-2025_3857/default/GoogleMapsCompatible/${z}/${y}/${x}.jpg`) satisfies TileUrl,
+  // Live Esri imagery is added in M1, once the Location Platform key exists and its endpoint is verified.
+  inaturalist: 'https://api.inaturalist.org/v1',
+  wikipediaSummary: (title: string) =>
+    `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+  nominatim: 'https://nominatim.openstreetmap.org',
+} as const;
+
+/** Bundled files in public/, resolved against the page so any Pages sub-path works. */
+export function assetUrl(path: string): string {
+  return `${import.meta.env.BASE_URL}${path}`;
+}
+
+export const assets = {
+  earthDay: 'textures/earth_day.jpg',
+  earthNight: 'textures/earth_night.jpg',
+  earthElevation: 'textures/earth_elev.png',
+} as const;
+
+export const credits: readonly string[] = [
+  'Globe imagery: NASA Blue Marble and Black Marble (GIBS)',
+  'Elevation: AWS Terrain Tiles (SRTM, GMTED, ETOPO1 and others)',
+];
