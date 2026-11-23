@@ -9,6 +9,8 @@ import { isVisitable } from './geo/tiles.ts';
 import { GlobeView, type GlobeHit } from './globe/GlobeView.ts';
 import { featuredPlaces, type Place } from './places.ts';
 import { formatVisitHash, parseVisitHash } from './router.ts';
+import { Exploration } from './player/Exploration.ts';
+import { preloadPlayer } from './player/Player.ts';
 import { GlobeUi } from './ui/globeUi.ts';
 import { LocationUi } from './ui/locationUi.ts';
 import { loadPlace, TerrainUnavailableError, type LoadProgress } from './world/loadPlace.ts';
@@ -76,6 +78,7 @@ async function boot(): Promise<void> {
   let tilesVisible = false;
   let state: 'globe' | 'loading' | 'location' = 'globe';
   let location: LocationView | null = null;
+  let exploration: Exploration | null = null;
 
   const ui = new GlobeUi(overlay, featuredPlaces, {
     onSearch: (query) => void runSearch(query),
@@ -187,6 +190,7 @@ async function boot(): Promise<void> {
     const shown = ui.currentTitle();
     const title = shown && shown !== 'Finding the name…' ? shown : formatLatLon(target.lat, target.lon);
     globe.select(target.lat, target.lon, DIVE_ALTITUDE);
+    preloadPlayer().catch(() => {}); // fetch the player model alongside the terrain
     try {
       const [data] = await Promise.all([
         loadPlace(target.lat, target.lon, {
@@ -215,6 +219,8 @@ async function boot(): Promise<void> {
         ],
         solarHours: location.solarHoursNow,
       });
+      exploration = await Exploration.start(location, locationUi);
+      locationUi.attachInput(exploration.input);
       ui.setStatus('');
       state = 'location';
       await fade(false);
@@ -236,6 +242,8 @@ async function boot(): Promise<void> {
     if (state !== 'location') return;
     state = 'loading';
     await fade(true);
+    exploration?.dispose();
+    exploration = null;
     location?.dispose();
     location = null;
     locationUi.hide();

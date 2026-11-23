@@ -19,6 +19,7 @@ npm run dev        # http://localhost:5173, also reachable from phones on the sa
 | `npm run build` | Type check + production build into `dist/` |
 | `npm run preview` | Serve the production build locally |
 | `npm run globe-assets` | Rebuild `public/textures/` from NASA GIBS and Terrain Tiles (rarely needed; outputs are committed) |
+| `npm run build-places [id ...]` | Rebuild the pre-built featured places in `public/places/` (outputs are committed) |
 
 Optional: copy `.env.example` to `.env.local` and set `VITE_ESRI_API_KEY` for sharp Esri imagery (from M1 on).
 
@@ -36,6 +37,9 @@ Every push to `main` then runs tests, builds and publishes. Any repository name 
 - Elevation: AWS Terrain Tiles (SRTM, GMTED, ETOPO1 and other sources).
 - Built with [three.js](https://threejs.org) (MIT).
 
-Later milestones add Esri World Imagery, EOX Sentinel-2 cloudless 2025 (CC BY-NC-SA 4.0), iNaturalist, Wikipedia and OpenStreetMap Nominatim; their credits are listed in the app.
+- Place names and search: © OpenStreetMap contributors, via Nominatim.
+- Satellite imagery: EOxCloudless 2025 by EOX IT Services GmbH (contains modified Copernicus Sentinel data 2025), CC BY-NC-SA 4.0. The pre-built imagery in `public/places/` carries the same licence (see its README). Esri World Imagery is used live when a key is configured.
+
+Later milestones add iNaturalist and Wikipedia; their credits are listed in the app.
 
 This is a non-commercial project.

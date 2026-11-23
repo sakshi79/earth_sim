@@ -15,15 +15,20 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "globe-assets": "node scripts/build-globe-assets.mjs",
-    "build-places": "node scripts/build-places.mjs"
+    "build-places": "node scripts/build-places.mjs",
+    "build-player-model": "node scripts/build-player-model.mjs"
   },
   "dependencies": {
     "three": "^0.187.0",
     "three-slippy-map-globe": "^1.0.6"
   },
   "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "@types/three": "^0.187.0",
     "jpeg-js": "^0.4.4",
+    "meshoptimizer": "^1.3.0",
     "pngjs": "^7.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8",

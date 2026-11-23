@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { waterness } from '../data/globeMaps.ts';
+import type { WorldQuery } from '../player/movement.ts';
 import type { PlaceData } from './loadPlace.ts';
 import {
   atSolarTime,
@@ -12,6 +12,7 @@ import {
   solarHours,
   sunDirectionLocal,
   vertexHeights,
+  windowPixelToLatLon,
 } from './terrainWindow.ts';
 
 /** Terrain grid cells per side (385² ≈ 148k vertices). */
@@ -20,6 +21,7 @@ const SEGMENTS = 384;
 const SKY_SCALE = 20_000;
 const FAR_PLANE = 60_000;
 const APRON_SIZE = 400_000;
+const UNDERWATER_COLOR = new THREE.Color(0x0b4a5c);
 
 export interface LocationOptions {
   /** The coarse global map shows ocean nearby; enables the sea. */
@@ -33,20 +35,26 @@ export interface LocationOptions {
 /**
  * The 3D scene of a visited place: real terrain and imagery at true scale (1 unit = 1 m;
  * x east, y up, z south, origin at the chosen point), sea, sky and sun for the local time.
- * M2 camera: orbit and pan above the ground. The player arrives in M3.
+ * The camera is driven from outside through `onFrame` (see player/Exploration.ts).
  */
 export class LocationView {
   /** Local solar time at the place when the scene opened, in hours. */
   readonly solarHoursNow: number;
   readonly hasSea: boolean;
+  readonly scene = new THREE.Scene();
+  readonly camera: THREE.PerspectiveCamera;
+  /** Ground height, open sea and bounds, for the player and cameras. */
+  readonly world: WorldQuery;
+  /** Called every frame before rendering, with the step in seconds. */
+  onFrame: ((dt: number) => void) | null = null;
 
   private readonly container: HTMLElement;
   private readonly data: PlaceData;
   private readonly date: Date;
   private readonly renderer: THREE.WebGLRenderer;
-  private readonly scene = new THREE.Scene();
-  private readonly camera: THREE.PerspectiveCamera;
-  private readonly controls: OrbitControls;
+  private readonly mask: Uint8Array;
+  private underwater = false;
+  private lastFrameMs: number | null = null;
   private readonly sky = new Sky();
   private readonly envSky = new Sky();
   private readonly envScene = new THREE.Scene();
@@ -57,6 +65,7 @@ export class LocationView {
   private readonly sunLight = new THREE.DirectionalLight(0xffffff, 3);
   private readonly skyLight = new THREE.HemisphereLight(0x9db4d6, 0x3a3226, 0.4);
   private readonly fog = new THREE.Fog(0xb8cbe0, 1000, 10000);
+  private readonly underwaterFog = new THREE.Fog(0x0b4a5c, 1, 45);
   private readonly grid: Float32Array;
   private readonly bounds: { minX: number; maxX: number; minZ: number; maxZ: number };
   private readonly halfSize: number;
@@ -84,6 +93,7 @@ export class LocationView {
     // coincide (some reefs, like Heron Island, are flat 0 m in the elevation data).
     const water = options.oceanNearby ? waterPixels(data.imagery, w.sizePx) : null;
     const mask = seaMask(data.heights, w.sizePx, w.sizePx, options.oceanNearby, (i) => water?.[i] === 1);
+    this.mask = mask;
     this.hasSea = mask.includes(1);
     const heights = this.hasSea ? data.heights.map((h, i) => (mask[i] ? Math.min(h, -2) : h)) : data.heights;
 
@@ -93,6 +103,11 @@ export class LocationView {
     const nw = pixelToLocal(w, 0, 0);
     const se = pixelToLocal(w, w.sizePx, w.sizePx);
     this.bounds = { minX: nw.x, maxX: se.x, minZ: nw.z, maxZ: se.z };
+    this.world = {
+      heightAt: (x, z) => this.heightAt(x, z),
+      waterAt: (x, z) => this.waterAt(x, z),
+      bounds: this.bounds,
+    };
     const apronY = this.hasSea ? -2 : edgeMinimum(this.grid, SEGMENTS + 1) - 30;
     this.scene.add(this.createTerrain(apronY));
     this.scene.add(this.createApron(apronY));
@@ -115,20 +130,11 @@ export class LocationView {
     this.envScene.add(this.envSky);
     this.scene.add(this.sunLight, this.skyLight);
 
-    // Camera: from the south, looking down at about 35°.
+    // A wide opening view from the south until a camera rig takes over.
     const groundHere = this.surfaceAt(0, 0);
     const distance = THREE.MathUtils.clamp(this.halfSize * 0.45, 600, 5000);
     this.camera.position.set(0, groundHere + distance * Math.sin(0.6), distance * Math.cos(0.6));
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, groundHere, 0);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
-    this.controls.screenSpacePanning = false;
-    this.controls.zoomToCursor = true;
-    this.controls.maxPolarAngle = 1.45;
-    this.controls.minDistance = 25;
-    this.controls.maxDistance = this.halfSize * 1.3;
-    this.controls.update();
+    this.camera.lookAt(0, groundHere, 0);
 
     this.solarHoursNow = solarHours(this.date, w.lon);
     this.setSolarHours(this.solarHoursNow);
@@ -136,6 +142,32 @@ export class LocationView {
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(container);
     this.resize();
+  }
+
+  get domElement(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
+  /** Latitude/longitude of local coordinates. */
+  latLonAt(x: number, z: number): { lat: number; lon: number } {
+    const { px, py } = localToPixel(this.data.window, x, z);
+    return windowPixelToLatLon(this.data.window, px, py);
+  }
+
+  /** Whether a point (local metres) is over open sea. */
+  waterAt(x: number, z: number): boolean {
+    if (!this.hasSea) return false;
+    const w = this.data.window;
+    const { px, py } = localToPixel(w, x, z);
+    const i = Math.floor(px);
+    const j = Math.floor(py);
+    if (i < 0 || j < 0 || i >= w.sizePx || j >= w.sizePx) return false;
+    return this.mask[j * w.sizePx + i] === 1;
+  }
+
+  /** Dense blue-green fog while the camera is under the sea surface. */
+  setUnderwater(underwater: boolean): void {
+    this.underwater = underwater;
   }
 
   /** Terrain height in metres at local coordinates (x east, z south). */
@@ -176,8 +208,8 @@ export class LocationView {
 
   dispose(): void {
     this.renderer.setAnimationLoop(null);
+    this.onFrame = null;
     this.resizeObserver.disconnect();
-    this.controls.dispose();
     this.scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       object.geometry.dispose();
@@ -194,14 +226,23 @@ export class LocationView {
   }
 
   private frame(timeMs: number): void {
-    this.controls.update();
-    this.keepInBounds();
+    const dt = this.lastFrameMs === null ? 0 : Math.min(0.1, (timeMs - this.lastFrameMs) / 1000);
+    this.lastFrameMs = timeMs;
+    this.onFrame?.(dt);
 
-    // Fog hides the edge of the area at eye level, but thins out when looking down from high up.
-    const height = Math.max(0, this.camera.position.y - this.surfaceAt(this.camera.position.x, this.camera.position.z));
-    this.fog.near = Math.max(this.halfSize * 0.6, height * 1.5);
-    this.fog.far = Math.max(this.halfSize * 1.6, height * 4);
-    this.camera.near = THREE.MathUtils.clamp(height * 0.05, 0.5, 50);
+    const camera = this.camera.position;
+    const height = Math.max(0, camera.y - this.surfaceAt(camera.x, camera.z));
+    if (this.underwater) {
+      // Water swallows light within tens of metres.
+      this.scene.fog = this.underwaterFog;
+      this.underwaterFog.color.copy(UNDERWATER_COLOR).multiplyScalar(0.25 + 0.75 * this.daylight);
+    } else {
+      // Fog hides the edge of the area at eye level, but thins out when looking down from high up.
+      this.scene.fog = this.fog;
+      this.fog.near = Math.max(this.halfSize * 0.6, height * 1.5);
+      this.fog.far = Math.max(this.halfSize * 1.6, height * 4);
+    }
+    this.camera.near = THREE.MathUtils.clamp(height * 0.02, 0.1, 50);
     this.camera.updateProjectionMatrix();
 
     this.sky.material.uniforms.time.value = timeMs / 1000;
@@ -218,22 +259,6 @@ export class LocationView {
     this.envTarget = target;
     this.scene.environment = target.texture;
     this.scene.environmentIntensity = 0.1 + 0.45 * this.daylight;
-  }
-
-  /** Keeps the orbit target on the ground inside the area, and the camera above the ground. */
-  private keepInBounds(): void {
-    const target = this.controls.target;
-    const camera = this.camera.position;
-    const margin = this.halfSize * 0.1;
-    const x = THREE.MathUtils.clamp(target.x, this.bounds.minX + margin, this.bounds.maxX - margin);
-    const z = THREE.MathUtils.clamp(target.z, this.bounds.minZ + margin, this.bounds.maxZ - margin);
-    const y = this.surfaceAt(x, z);
-    camera.x += x - target.x;
-    camera.z += z - target.z;
-    camera.y += y - target.y;
-    target.set(x, y, z);
-    const ground = this.surfaceAt(camera.x, camera.z) + 8;
-    if (camera.y < ground) camera.y = ground;
   }
 
   /** Height of whatever the camera could hit: the ground, or the sea surface over water. */
@@ -342,6 +367,7 @@ export class LocationView {
         transparent: true,
         opacity: 0.85,
         alphaMap: alpha,
+        side: THREE.DoubleSide, // seen from below when diving
       }),
     );
     sea.position.set(center.x, 0, center.z);
