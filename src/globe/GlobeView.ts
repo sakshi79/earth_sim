@@ -4,9 +4,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 const EARTH_RADIUS = 1;
 /** Vertical field of view on landscape screens, in degrees. */
 const BASE_FOV = 40;
+/** Seconds per full turn of the Earth's visual spin (real Earth: 86,164 s). */
+const SPIN_PERIOD_S = 120;
 
 /**
- * The globe screen. M0: a textured, slowly spinning Earth with orbit controls.
+ * The globe screen. M0: a textured Earth spinning slowly on its axis, with orbit controls.
  * M1 adds real-sun day/night, atmosphere, tiled zoom imagery and picking.
  */
 export class GlobeView {
@@ -14,9 +16,14 @@ export class GlobeView {
   private readonly scene = new THREE.Scene();
   private readonly camera: THREE.PerspectiveCamera;
   private readonly controls: OrbitControls;
+  /** Spins about its Y axis (north up). Everything attached to the surface goes in here. */
+  private readonly globe = new THREE.Group();
   private readonly earth: THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>;
   private readonly resizeObserver: ResizeObserver;
   private readonly container: HTMLElement;
+  private readonly reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  private dragging = false;
+  private lastFrameMs: number | null = null;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -38,7 +45,8 @@ export class GlobeView {
       new THREE.SphereGeometry(EARTH_RADIUS, 128, 64),
       new THREE.MeshStandardMaterial({ color: 0x1b2a3a, roughness: 0.9, metalness: 0 }),
     );
-    this.scene.add(this.earth);
+    this.globe.add(this.earth);
+    this.scene.add(this.globe);
     this.scene.add(createStars(3000, 40));
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -47,10 +55,12 @@ export class GlobeView {
     this.controls.minDistance = 1.3;
     this.controls.maxDistance = 8;
     this.controls.rotateSpeed = 0.5;
-    this.controls.autoRotate = true;
-    this.controls.autoRotateSpeed = 0.5;
+    // Pause the spin while the user drags, so the surface doesn't slide under the pointer.
     this.controls.addEventListener('start', () => {
-      this.controls.autoRotate = false;
+      this.dragging = true;
+    });
+    this.controls.addEventListener('end', () => {
+      this.dragging = false;
     });
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -69,7 +79,14 @@ export class GlobeView {
   }
 
   start(): void {
-    this.renderer.setAnimationLoop(() => {
+    this.renderer.setAnimationLoop((timeMs: number) => {
+      // Clamp the step so returning to a background tab doesn't jump the spin.
+      const dt = this.lastFrameMs === null ? 0 : Math.min(0.1, (timeMs - this.lastFrameMs) / 1000);
+      this.lastFrameMs = timeMs;
+      if (!this.dragging && !this.reducedMotion.matches) {
+        // Positive about +Y is west-to-east, the way the real Earth turns.
+        this.globe.rotation.y += (dt * 2 * Math.PI) / SPIN_PERIOD_S;
+      }
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
     });
