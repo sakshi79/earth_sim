@@ -5,7 +5,7 @@ export type CameraMode = 'follow' | 'scout';
 
 const MIN_DISTANCE = 2;
 const MAX_DISTANCE = 15;
-const DEFAULT_DISTANCE = 6;
+const DEFAULT_DISTANCE = 4.5;
 /** The opening shot starts wide and settles behind the player. */
 const ESTABLISHING_DISTANCE = 80;
 const MIN_PITCH = -0.2;
@@ -181,17 +181,31 @@ export class CameraRig {
     return null;
   }
 
-  /** Pulls the camera in front of any terrain between it and the player's head. */
+  /**
+   * Keeps terrain out from between the camera and the player's head: first by rising to look over
+   * it (keeping the distance), and only if that fails by moving in front of it.
+   */
   private keepLineOfSight(head: THREE.Vector3, desired: THREE.Vector3): void {
-    const steps = 16;
-    const p = new THREE.Vector3();
-    for (let i = 1; i <= steps; i++) {
-      p.lerpVectors(head, desired, i / steps);
-      if (this.world.heightAt(p.x, p.z) + 0.3 > p.y) {
-        desired.lerpVectors(head, desired, Math.max(0.15, (i - 1) / steps));
+    const blockedAt = (to: THREE.Vector3): number => {
+      const steps = 16;
+      const p = new THREE.Vector3();
+      for (let i = 1; i <= steps; i++) {
+        p.lerpVectors(head, to, i / steps);
+        if (this.world.heightAt(p.x, p.z) + 0.3 > p.y) return i / steps;
+      }
+      return -1;
+    };
+    const firstBlock = blockedAt(desired);
+    if (firstBlock < 0) return;
+    const raised = new THREE.Vector3();
+    for (let k = 1; k <= 6; k++) {
+      raised.copy(desired).setY(desired.y + k * this.distance * 0.3);
+      if (blockedAt(raised) < 0) {
+        desired.copy(raised);
         return;
       }
     }
+    desired.lerpVectors(head, desired, Math.max(0.25, firstBlock - 1 / 16));
   }
 
   /** Keeps the camera clearly above the sea surface, or clearly below it when diving. */

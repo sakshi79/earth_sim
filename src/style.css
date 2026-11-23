@@ -126,6 +126,7 @@ input {
 }
 
 .chip {
+  align-self: flex-start;
   padding: 4px 10px;
   border-radius: 999px;
   background: var(--panel);
@@ -204,6 +205,16 @@ input {
   #world-ui .hint {
     display: none;
   }
+}
+
+/* A soft panel keeps the title and HUD readable over bright sky, snow and sea. */
+.place-heading {
+  padding: 6px 12px 8px;
+  border-radius: var(--radius);
+  background: rgba(8, 12, 18, 0.5);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  min-width: 0;
 }
 
 .place-heading h1 {

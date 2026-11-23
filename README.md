@@ -20,6 +20,11 @@ npm run dev        # http://localhost:5173, also reachable from phones on the sa
 | `npm run preview` | Serve the production build locally |
 | `npm run globe-assets` | Rebuild `public/textures/` from NASA GIBS and Terrain Tiles (rarely needed; outputs are committed) |
 | `npm run build-places [id ...]` | Rebuild the pre-built featured places in `public/places/` (outputs are committed) |
+| `npm run build-player-model -- <glb>` | Rebuild `public/models/player.glb` from the Quaternius library (see `public/models/README.md`) |
+
+## Controls (in a place)
+
+WASD or arrows move · Shift run · Space jump (rise in water) · C dive · drag to look · scroll to zoom · V switch between the Follow and Scout cameras · in Scout, click the ground then R to move the player there · G back to the globe. Phones and tablets get an on-screen thumbstick and buttons.
 
 Optional: copy `.env.example` to `.env.local` and set `VITE_ESRI_API_KEY` for sharp Esri imagery (from M1 on).
 
@@ -35,6 +40,7 @@ Every push to `main` then runs tests, builds and publishes. Any repository name 
 
 - Globe imagery: NASA Blue Marble and Black Marble, via NASA GIBS.
 - Elevation: AWS Terrain Tiles (SRTM, GMTED, ETOPO1 and other sources).
+- Player character and animations: Universal Animation Library by Quaternius (CC0).
 - Built with [three.js](https://threejs.org) (MIT).
 
 - Place names and search: © OpenStreetMap contributors, via Nominatim.

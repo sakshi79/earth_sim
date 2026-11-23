@@ -73,7 +73,7 @@ Browser access (CORS) verified 2026-11-22. All keyless except Esri (D3). Endpoin
 | Place names, search | Nominatim (OpenStreetMap) | ≤ 1 req/s, no search-as-you-type; ODbL |
 | Globe textures (bundled) | NASA Blue Marble and Black Marble (GIBS) | NASA; credit |
 | Coarse global elevation (bundled) | Terrain Tiles z3, reprojected | as above |
-| Player model (bundled) | CC0 character pack **[OPEN]** | CC0 |
+| Player model (bundled) | Quaternius Universal Animation Library mannequin, trimmed to 11 animations (2.7 MB) | CC0 |
 
 Every request goes through an adapter with caching, per-host rate limits and graceful failure.
 
@@ -200,5 +200,6 @@ None. The project owner creates and manages the GitHub repository, and any repo 
 - **D4 Look.** The MVP uses real terrain and imagery with stylised low-poly creatures, plants and player. A fully stylised look is a later option.
 - **D5 Game-like focus.** The MVP gains place goals, a collection journal with rarity points, climbing and diving (M6), and sound effects. This pushes the launch from M6 to M7. Trekking and leaderboards stay later; leaderboards need a backend.
 - **D6 Player.** One fixed character in the MVP. A choice of characters and customisation come later.
+- **D9 Player model.** Quaternius' Universal Animation Library (CC0): one mannequin with idle, walk, jog, sprint, jump, swim and crouch animations on one rig. It has no climbing animation, so the climbing activity (M6) needs one from another CC0 pack on the same rig, or a code-driven pose.
 - **D7 Recording.** Left out of the MVP. Photo mode and clip recording stay on the later list.
 - **D8 Phones.** Mobile browsers are supported in the MVP with on-screen touch controls built alongside keyboard and mouse in M3, and phone performance is tuned in M7 at Low quality.

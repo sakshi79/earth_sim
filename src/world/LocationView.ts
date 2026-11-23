@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { waterness } from '../data/globeMaps.ts';
+import type { LandscapeType } from '../geo/landscape.ts';
 import type { WorldQuery } from '../player/movement.ts';
+import type { Site } from './scatter.ts';
+import { Vegetation } from './vegetation.ts';
 import type { PlaceData } from './loadPlace.ts';
 import {
   atSolarTime,
@@ -22,6 +25,8 @@ const SKY_SCALE = 20_000;
 const FAR_PLANE = 60_000;
 const APRON_SIZE = 400_000;
 const UNDERWATER_COLOR = new THREE.Color(0x0b4a5c);
+/** Vertical field of view on landscape screens, in degrees. */
+const BASE_FOV = 55;
 
 export interface LocationOptions {
   /** The coarse global map shows ocean nearby; enables the sea. */
@@ -30,6 +35,8 @@ export interface LocationOptions {
   date?: Date;
   /** Vertical exaggeration of the terrain (1 = true scale). */
   exaggeration?: number;
+  /** Coarse landscape type, which decides what grows here. */
+  landscape?: LandscapeType | null;
 }
 
 /**
@@ -47,12 +54,17 @@ export class LocationView {
   readonly world: WorldQuery;
   /** Called every frame before rendering, with the step in seconds. */
   onFrame: ((dt: number) => void) | null = null;
+  /** Where the action is (the player): vegetation and sun shadows centre here. */
+  readonly focus = new THREE.Vector3();
 
   private readonly container: HTMLElement;
   private readonly data: PlaceData;
   private readonly date: Date;
   private readonly renderer: THREE.WebGLRenderer;
   private readonly mask: Uint8Array;
+  private readonly vegetation: Vegetation;
+  private readonly imageryPixels: { data: Uint8ClampedArray; size: number } | null;
+  private readonly sunDirection = new THREE.Vector3(0, 1, 0);
   private underwater = false;
   private lastFrameMs: number | null = null;
   private readonly sky = new Sky();
@@ -83,10 +95,12 @@ export class LocationView {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.5;
+    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(this.renderer.domElement);
     this.pmrem = new THREE.PMREMGenerator(this.renderer);
 
-    this.camera = new THREE.PerspectiveCamera(55, 1, 1, FAR_PLANE);
+    this.camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 1, FAR_PLANE);
     this.scene.fog = this.fog;
 
     // Sea first: shallow sea floor is pushed at least 2 m under the surface so the two never
@@ -113,6 +127,14 @@ export class LocationView {
     this.scene.add(this.createApron(apronY));
     if (this.hasSea) this.scene.add(this.createSea(mask));
 
+    // Grass, rocks and trees, placed where the imagery shows them and tinted to match it.
+    this.imageryPixels = readPixels(data.imagery);
+    this.vegetation = new Vegetation(
+      { landscape: options.landscape ?? null, lat: w.lat, lon: w.lon },
+      { site: (x, z) => this.siteAt(x, z) },
+    );
+    this.scene.add(this.vegetation.group);
+
     // Sky and light.
     for (const sky of [this.sky, this.envSky]) {
       const u = sky.material.uniforms;
@@ -128,7 +150,17 @@ export class LocationView {
     this.scene.add(this.sky);
     this.envSky.scale.setScalar(50); // inside the PMREM cube camera's far plane
     this.envScene.add(this.envSky);
-    this.scene.add(this.sunLight, this.skyLight);
+    this.scene.add(this.sunLight, this.sunLight.target, this.skyLight);
+    // Sun shadows in a box around the player, so they stay sharp where it matters.
+    const shadow = this.sunLight.shadow;
+    this.sunLight.castShadow = true;
+    shadow.mapSize.set(2048, 2048);
+    const half = 45;
+    Object.assign(shadow.camera, { left: -half, right: half, top: half, bottom: -half, near: 1, far: 900 });
+    shadow.camera.updateProjectionMatrix();
+    shadow.bias = -0.0004;
+    shadow.normalBias = 0.05;
+    shadow.radius = 3;
 
     // A wide opening view from the south until a camera rig takes over.
     const groundHere = this.surfaceAt(0, 0);
@@ -185,15 +217,16 @@ export class LocationView {
     const sun = new THREE.Vector3(s.x, s.y, s.z);
     this.sky.material.uniforms.sunPosition.value.copy(sun);
     this.envSky.material.uniforms.sunPosition.value.copy(sun);
-    this.sunLight.position.copy(sun).multiplyScalar(10_000);
+    this.sunDirection.copy(sun);
 
     const day = THREE.MathUtils.smoothstep(s.y, -0.05, 0.25);
     const twilight = THREE.MathUtils.smoothstep(s.y, -0.18, 0.02);
     this.daylight = day;
-    this.sunLight.intensity = 2.4 * THREE.MathUtils.smoothstep(s.y, -0.02, 0.2);
+    // Sun against sky light at about 3–4 : 1, like a clear day, so shadows read clearly.
+    this.sunLight.intensity = 4 * THREE.MathUtils.smoothstep(s.y, -0.02, 0.2);
     this.sunLight.color.setRGB(1, 0.72 + 0.28 * day, 0.5 + 0.5 * day);
     // A moonlight floor keeps night scenes readable.
-    this.skyLight.intensity = 0.12 + 0.45 * twilight;
+    this.skyLight.intensity = 0.1 + 0.2 * twilight;
     this.skyLight.color.set(day > 0.5 ? 0x9db4d6 : 0x5d6f99);
     this.fog.color
       .set(0x0a1020)
@@ -229,6 +262,10 @@ export class LocationView {
     const dt = this.lastFrameMs === null ? 0 : Math.min(0.1, (timeMs - this.lastFrameMs) / 1000);
     this.lastFrameMs = timeMs;
     this.onFrame?.(dt);
+    this.vegetation.update(this.focus.x, this.focus.z);
+    // The sun's shadow box follows the player.
+    this.sunLight.target.position.copy(this.focus);
+    this.sunLight.position.copy(this.focus).addScaledVector(this.sunDirection, 400);
 
     const camera = this.camera.position;
     const height = Math.max(0, camera.y - this.surfaceAt(camera.x, camera.z));
@@ -258,7 +295,26 @@ export class LocationView {
     this.envTarget?.dispose();
     this.envTarget = target;
     this.scene.environment = target.texture;
-    this.scene.environmentIntensity = 0.1 + 0.45 * this.daylight;
+    this.scene.environmentIntensity = 0.08 + 0.27 * this.daylight;
+  }
+
+  /** What the vegetation scatter needs to know about a spot, or null outside the area. */
+  private siteAt(x: number, z: number): Site | null {
+    const { minX, maxX, minZ, maxZ } = this.bounds;
+    if (x < minX || x > maxX || z < minZ || z > maxZ) return null;
+    const height = this.heightAt(x, z);
+    const slope = Math.hypot(this.heightAt(x + 2, z) - this.heightAt(x - 2, z), this.heightAt(x, z + 2) - this.heightAt(x, z - 2)) / 4;
+    let rgb: [number, number, number] = [110, 110, 90];
+    if (this.imageryPixels) {
+      const { px, py } = localToPixel(this.data.window, x, z);
+      const scale = this.imageryPixels.size / this.data.window.sizePx;
+      const i = Math.min(this.imageryPixels.size - 1, Math.max(0, Math.floor(px * scale)));
+      const j = Math.min(this.imageryPixels.size - 1, Math.max(0, Math.floor(py * scale)));
+      const k = (j * this.imageryPixels.size + i) * 4;
+      const d = this.imageryPixels.data;
+      rgb = [d[k], d[k + 1], d[k + 2]];
+    }
+    return { height, slope, water: this.waterAt(x, z), rgb };
   }
 
   /** Height of whatever the camera could hit: the ground, or the sea surface over water. */
@@ -324,7 +380,10 @@ export class LocationView {
       material.map = texture;
       material.color.set(0xffffff);
     }
-    return new THREE.Mesh(geometry, material);
+    addGroundDetail(material, createDetailTexture(this.renderer.capabilities.getMaxAnisotropy()));
+    const terrain = new THREE.Mesh(geometry, material);
+    terrain.receiveShadow = true;
+    return terrain;
   }
 
   /** A wide ground (or sea) plane around the area, fading into the fog. */
@@ -378,9 +437,90 @@ export class LocationView {
     const { clientWidth: width, clientHeight: height } = this.container;
     if (width === 0 || height === 0) return;
     this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
+    const aspect = width / height;
+    this.camera.aspect = aspect;
+    // On portrait screens keep at least a 60° horizontal view, so the player doesn't fill a phone.
+    const minHorizontal = THREE.MathUtils.degToRad(60);
+    const vertical = 2 * Math.atan(Math.tan(minHorizontal / 2) / aspect);
+    this.camera.fov = Math.min(95, Math.max(BASE_FOV, THREE.MathUtils.radToDeg(vertical)));
     this.camera.updateProjectionMatrix();
   }
+}
+
+/**
+ * Close-up ground grain: the satellite image is ~8 m per pixel, a smooth smear at a person's feet.
+ * A tiling greyscale texture at two scales modulates it near the camera and fades out with distance.
+ */
+function addGroundDetail(material: THREE.MeshStandardMaterial, detail: THREE.Texture): void {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.detailMap = { value: detail };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vDetailWorld;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvDetailWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D detailMap;\nvarying vec3 vDetailWorld;')
+      .replace(
+        '#include <map_fragment>',
+        `#include <map_fragment>
+        float detailFade = 1.0 - smoothstep(30.0, 250.0, distance(vDetailWorld, cameraPosition));
+        float fine = texture2D(detailMap, vDetailWorld.xz / 1.7).r;
+        float coarse = texture2D(detailMap, vDetailWorld.xz / 7.3 + 0.37).r;
+        float grain = (fine * 0.6 + coarse * 0.4) * 1.6 + 0.2;
+        diffuseColor.rgb *= mix(1.0, grain, 0.6 * detailFade);`,
+      );
+  };
+}
+
+/** Seamless greyscale noise (mean ~0.5): pebbles, soil and blades blurred together. */
+function createDetailTexture(anisotropy: number): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const context = canvas.getContext('2d') as CanvasRenderingContext2D;
+  const image = context.createImageData(size, size);
+  // Sum of wrapped value-noise octaves, so the texture tiles seamlessly.
+  const octave = (cells: number, seed: number) => (x: number, y: number): number => {
+    const fx = (x / size) * cells;
+    const fy = (y / size) * cells;
+    const x0 = Math.floor(fx);
+    const y0 = Math.floor(fy);
+    const tx = fx - x0;
+    const ty = fy - y0;
+    const v = (i: number, j: number): number => hashNoise(((i % cells) + cells) % cells, ((j % cells) + cells) % cells, seed);
+    const sx = tx * tx * (3 - 2 * tx);
+    const sy = ty * ty * (3 - 2 * ty);
+    return (v(x0, y0) * (1 - sx) + v(x0 + 1, y0) * sx) * (1 - sy) + (v(x0, y0 + 1) * (1 - sx) + v(x0 + 1, y0 + 1) * sx) * sy;
+  };
+  const layers = [octave(8, 1), octave(32, 2), octave(64, 3), octave(128, 4)];
+  const weights = [0.35, 0.3, 0.2, 0.15];
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const value = layers.reduce((sum, layer, k) => sum + layer(x, y) * weights[k], 0);
+      const v = Math.round(Math.min(1, Math.max(0, (value - 0.5) * 1.8 + 0.5)) * 255);
+      const k = (y * size + x) * 4;
+      image.data[k] = image.data[k + 1] = image.data[k + 2] = v;
+      image.data[k + 3] = 255;
+    }
+  }
+  context.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.anisotropy = anisotropy;
+  return texture;
+}
+
+function hashNoise(i: number, j: number, seed: number): number {
+  let h = Math.imul(i, 0x27d4eb2d) ^ Math.imul(j, 0x165667b1) ^ Math.imul(seed, 0x9e3779b1);
+  h = Math.imul(h ^ (h >>> 15), 0x85ebca6b);
+  h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
+/** The imagery's RGBA pixels (square), for colour lookups. */
+function readPixels(imagery: HTMLCanvasElement | null): { data: Uint8ClampedArray; size: number } | null {
+  if (!imagery) return null;
+  const context = imagery.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+  return { data: context.getImageData(0, 0, imagery.width, imagery.height).data, size: imagery.width };
 }
 
 /** 1 where the imagery looks like water, per terrain pixel (imagery scaled to size × size). */

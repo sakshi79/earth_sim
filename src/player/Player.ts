@@ -63,6 +63,9 @@ export class Player {
   private current: THREE.AnimationAction | null = null;
 
   private constructor(model: THREE.Object3D, clips: THREE.AnimationClip[]) {
+    model.traverse((object) => {
+      if (object instanceof THREE.Mesh) object.castShadow = true;
+    });
     this.object.add(model);
     this.mixer = clips.length ? new THREE.AnimationMixer(model) : null;
     for (const clip of clips) this.actions.set(clip.name, this.mixer!.clipAction(clip));
@@ -112,12 +115,26 @@ function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
 
+/** A simple standing person (head, torso, arms, legs) if the model can't be loaded. */
 function createFallbackFigure(): THREE.Object3D {
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 1.1, 6, 12), new THREE.MeshStandardMaterial({ color: BODY_COLOR }));
-  body.position.y = 0.83;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.17, 16, 12), new THREE.MeshStandardMaterial({ color: JOINT_COLOR }));
-  head.position.y = 1.62;
+  const body = new THREE.MeshStandardMaterial({ color: BODY_COLOR, roughness: 0.75 });
+  const dark = new THREE.MeshStandardMaterial({ color: JOINT_COLOR, roughness: 0.8 });
+  const limb = (radius: number, length: number, material: THREE.Material, x: number, y: number, tilt = 0): THREE.Mesh => {
+    const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, length, 4, 8), material);
+    mesh.position.set(x, y, 0);
+    mesh.rotation.z = tilt;
+    return mesh;
+  };
   const figure = new THREE.Group();
-  figure.add(body, head);
+  figure.add(
+    limb(0.09, 0.72, dark, -0.11, 0.45), // legs
+    limb(0.09, 0.72, dark, 0.11, 0.45),
+    limb(0.17, 0.42, body, 0, 1.15), // torso
+    limb(0.065, 0.55, body, -0.27, 1.12, 0.12), // arms
+    limb(0.065, 0.55, body, 0.27, 1.12, -0.12),
+  );
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), body);
+  head.position.y = 1.62;
+  figure.add(head);
   return figure;
 }

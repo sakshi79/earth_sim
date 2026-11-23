@@ -46,6 +46,7 @@ export class Exploration {
     this.hud = hud;
     this.player = player;
     this.state = spawnState(0, 0, view.world);
+    view.focus.set(this.state.x, this.state.y, this.state.z);
     this.rig = new CameraRig(view.camera, view.world, view.hasSea, this.state);
     this.input = new Input(view.domElement);
     this.marker = createMarker();
@@ -67,6 +68,7 @@ export class Exploration {
 
   private frame(dt: number): void {
     const input = this.input;
+    const camera0 = this.view.camera.position;
     const drag = input.takeDrag();
     this.rig.orbit(drag.dx, drag.dy);
     this.rig.zoom(input.takeZoom());
@@ -87,6 +89,9 @@ export class Exploration {
     input.takeClick(); // clicks only matter in the scout camera
 
     this.player.update(dt, this.state, this.observeLeft > 0);
+    // Vegetation and sun shadows centre on the player (on the scout camera's ground point when flying).
+    if (this.rig.mode === 'follow') this.view.focus.set(this.state.x, this.state.y, this.state.z);
+    else this.view.focus.set(camera0.x, this.view.world.heightAt(camera0.x, camera0.z), camera0.z);
     const camera = this.view.camera.position;
     this.view.setUnderwater(camera.y < SEA_LEVEL && this.view.world.waterAt(camera.x, camera.z));
 

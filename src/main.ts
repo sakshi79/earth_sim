@@ -107,6 +107,10 @@ async function boot(): Promise<void> {
   });
   const updateCredits = (): void => ui.setCredits(tilesVisible ? [liveImagery.credit, ...credits] : credits);
   updateCredits();
+  if (import.meta.env.DEV) {
+    // Debugging hook for the dev server only (not in production builds).
+    Object.assign(window, { __earthSim: { location: () => location, exploration: () => exploration } });
+  }
 
   const globe = new GlobeView(app, liveImagery.url, {
     onHover: (hit) => ui.setHover(hit ? hoverText(hit) : null),
@@ -204,7 +208,7 @@ async function boot(): Promise<void> {
       globe.pause();
       app.hidden = overlay.hidden = true;
       world.hidden = false;
-      location = new LocationView(world, data, { oceanNearby });
+      location = new LocationView(world, data, { oceanNearby, landscape: target.landscape });
       location.start();
       const landscape = target.landscape ? landscapeLabels[target.landscape] : null;
       locationUi.show({
@@ -216,6 +220,7 @@ async function boot(): Promise<void> {
           ...(data.imageryCredit ? [data.imageryCredit] : []),
           ELEVATION_CREDIT,
           'Place names © OpenStreetMap contributors',
+          'Player: Universal Animation Library by Quaternius (CC0)',
         ],
         solarHours: location.solarHoursNow,
       });
