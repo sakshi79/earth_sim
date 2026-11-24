@@ -577,3 +577,70 @@ input {
     width: 100%;
   }
 }
+
+/* Species card (shown when observing wildlife). */
+.species-card {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  pointer-events: none;
+  animation: card-in 0.3s ease-out;
+}
+@keyframes card-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+.species-card-inner {
+  display: flex;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(16px);
+  padding: 12px;
+  max-width: 420px;
+  min-width: 260px;
+  pointer-events: auto;
+}
+.species-photo {
+  width: 90px;
+  height: 90px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.species-info h3 {
+  margin: 0 0 2px;
+  font-size: 1rem;
+  color: var(--accent);
+}
+.species-info .sci-name {
+  margin: 0 0 4px;
+  font-style: italic;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.species-info .group-tag {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  text-transform: capitalize;
+  color: var(--muted);
+}
+.species-info .conservation {
+  margin-left: 8px;
+  color: #ef6461;
+  font-weight: 600;
+}
+.species-info .summary {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+.species-info .photo-attr {
+  margin: 4px 0 0;
+  font-size: 0.65rem;
+  color: var(--muted);
+}

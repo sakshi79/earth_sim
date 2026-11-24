@@ -5,6 +5,11 @@
 // `?.` keeps this module loadable in Node (build scripts), where Vite's import.meta.env is absent.
 export const ESRI_API_KEY: string = import.meta.env?.VITE_ESRI_API_KEY ?? '';
 
+/** Cesium ion access token for OSM Buildings (free tier, public-facing like the Esri key). */
+export const CESIUM_ION_TOKEN: string = import.meta.env?.VITE_CESIUM_ION_TOKEN ?? '';
+/** Cesium ion asset ID for the OSM Buildings tileset. */
+export const CESIUM_OSM_BUILDINGS_ID = 96188;
+
 export type TileUrl = (z: number, x: number, y: number) => string;
 
 export const sources = {
@@ -20,6 +25,7 @@ export const sources = {
   wikipediaSummary: (title: string) =>
     `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
   nominatim: 'https://nominatim.openstreetmap.org',
+  overpass: 'https://overpass-api.de/api/interpreter',
 } as const;
 
 /** The imagery used for zoomed-in globe tiles: Esri when a key is configured, otherwise Sentinel-2. */

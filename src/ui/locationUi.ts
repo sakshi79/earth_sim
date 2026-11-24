@@ -20,7 +20,7 @@ export interface LocationUiHandlers {
 }
 
 const HINTS: Record<CameraMode, string> = {
-  follow: 'WASD move · Shift run · Space jump / rise · C dive · drag to look · scroll to zoom · V scout camera · G globe',
+  follow: 'WASD move · Shift run · Space jump / rise · C dive · E observe wildlife · drag to look · scroll to zoom · V scout camera · G globe',
   scout: 'WASD fly · Space / C up and down · Shift fast · drag to look · click the ground, then R to move the player · V follow · G globe',
 };
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];

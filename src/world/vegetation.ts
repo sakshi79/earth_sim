@@ -39,6 +39,21 @@ const LAYERS: readonly LayerSpec[] = [
 
 const CORAL_COLORS = [0xff7f7f, 0xff9f43, 0xb57edc, 0xffd166, 0x4ecdc4, 0xf78fb3].map((c) => new THREE.Color(c));
 
+const COLLISION_RADIUS: Partial<Record<PlantKind, number>> = {
+  rock: 0.55,
+  broadleaf: 0.3,
+  conifer: 0.25,
+  acacia: 0.3,
+  palm: 0.22,
+  cactus: 0.35,
+};
+
+interface Solid {
+  x: number;
+  z: number;
+  r: number;
+}
+
 interface Layer {
   spec: LayerSpec;
   seed: number;
@@ -46,6 +61,7 @@ interface Layer {
   /** Grid offsets within the radius, nearest first. */
   offsets: Int16Array;
   center: { x: number; z: number } | null;
+  solids: Solid[];
 }
 
 export class Vegetation {
@@ -76,7 +92,7 @@ export class Vegetation {
         this.group.add(mesh);
         return { mesh, color: part.color };
       });
-      this.layers.push({ spec, seed: 1013 * (index + 1), meshes, offsets: sortedOffsets(spec), center: null });
+      this.layers.push({ spec, seed: 1013 * (index + 1), meshes, offsets: sortedOffsets(spec), center: null, solids: [] });
     });
   }
 
@@ -86,6 +102,26 @@ export class Vegetation {
       const c = layer.center;
       if (!c || Math.hypot(x - c.x, z - c.z) > layer.spec.radius * 0.25) this.fill(layer, x, z);
     }
+  }
+
+  /** Pushes a point out of any solid vegetation (rocks, tree trunks). */
+  pushOut(x: number, z: number, radius: number): { x: number; z: number } {
+    const threshold = radius + 3;
+    for (const layer of this.layers) {
+      for (const solid of layer.solids) {
+        const dx = x - solid.x;
+        const dz = z - solid.z;
+        if (Math.abs(dx) > threshold || Math.abs(dz) > threshold) continue;
+        const dist = Math.hypot(dx, dz);
+        const minDist = radius + solid.r;
+        if (dist < minDist && dist > 0.001) {
+          const push = (minDist - dist) / dist;
+          x += dx * push;
+          z += dz * push;
+        }
+      }
+    }
+    return { x, z };
   }
 
   dispose(): void {
@@ -104,6 +140,8 @@ export class Vegetation {
     layer.center = { x, z };
     const ci = Math.floor(x / spec.cell);
     const cj = Math.floor(z / spec.cell);
+    const baseCollisionR = COLLISION_RADIUS[spec.kind];
+    const solids: Solid[] = [];
     const matrix = new THREE.Matrix4();
     const position = new THREE.Vector3();
     const rotation = new THREE.Quaternion();
@@ -132,8 +170,10 @@ export class Vegetation {
         else color.set(mode).multiplyScalar(shade);
         mesh.setColorAt(count, color);
       }
+      if (baseCollisionR) solids.push({ x: px, z: pz, r: baseCollisionR * s });
       count++;
     }
+    layer.solids = solids;
     for (const { mesh } of meshes) {
       mesh.count = count;
       mesh.instanceMatrix.needsUpdate = true;

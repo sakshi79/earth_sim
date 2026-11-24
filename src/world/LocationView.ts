@@ -1,11 +1,17 @@
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { waterness } from '../data/globeMaps.ts';
+import { fetchNearbySpecies } from '../data/inaturalist.ts';
+import { queryRoads, queryPOIs } from '../data/overpass.ts';
 import type { LandscapeType } from '../geo/landscape.ts';
 import type { WorldQuery } from '../player/movement.ts';
+import { Buildings, buildingsAvailable } from './buildings.ts';
+import { CreatureSystem } from './creatures.ts';
+import type { PlaceData } from './loadPlace.ts';
+import { POILabels } from './pois.ts';
+import { Roads } from './roads.ts';
 import type { Site } from './scatter.ts';
 import { Vegetation } from './vegetation.ts';
-import type { PlaceData } from './loadPlace.ts';
 import {
   atSolarTime,
   localToPixel,
@@ -15,6 +21,7 @@ import {
   solarHours,
   sunDirectionLocal,
   vertexHeights,
+  windowBounds,
   windowPixelToLatLon,
 } from './terrainWindow.ts';
 
@@ -54,6 +61,12 @@ export class LocationView {
   readonly world: WorldQuery;
   /** Called every frame before rendering, with the step in seconds. */
   onFrame: ((dt: number) => void) | null = null;
+
+  /** Pushes a point out of solid vegetation (rocks, tree trunks). */
+  pushOutOfVegetation(x: number, z: number, radius: number): { x: number; z: number } {
+    return this.vegetation.pushOut(x, z, radius);
+  }
+  get creatures(): CreatureSystem | null { return this._creatures; }
   /** Where the action is (the player): vegetation and sun shadows centre here. */
   readonly focus = new THREE.Vector3();
 
@@ -63,6 +76,10 @@ export class LocationView {
   private readonly renderer: THREE.WebGLRenderer;
   private readonly mask: Uint8Array;
   private readonly vegetation: Vegetation;
+  private buildings: Buildings | null = null;
+  private roads: Roads | null = null;
+  private poiLabels: POILabels | null = null;
+  private _creatures: CreatureSystem | null = null;
   private readonly imageryPixels: { data: Uint8ClampedArray; size: number } | null;
   private readonly sunDirection = new THREE.Vector3(0, 1, 0);
   private underwater = false;
@@ -94,7 +111,7 @@ export class LocationView {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.5;
+    this.renderer.toneMappingExposure = 0.45;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     container.appendChild(this.renderer.domElement);
@@ -134,6 +151,15 @@ export class LocationView {
       { site: (x, z) => this.siteAt(x, z) },
     );
     this.scene.add(this.vegetation.group);
+
+    // Buildings (Cesium OSM Buildings via 3D Tiles), roads, and POI labels load in the background.
+    if (buildingsAvailable()) {
+      this.buildings = new Buildings(w.lat, w.lon, this.camera, this.renderer);
+      this.scene.add(this.buildings.group);
+    }
+    const bounds = windowBounds(w);
+    this.loadOverpassData(bounds, w);
+    this.loadWildlife(w.lat, w.lon);
 
     // Sky and light.
     for (const sky of [this.sky, this.envSky]) {
@@ -243,6 +269,10 @@ export class LocationView {
     this.renderer.setAnimationLoop(null);
     this.onFrame = null;
     this.resizeObserver.disconnect();
+    this.buildings?.dispose();
+    this.roads?.dispose();
+    this.poiLabels?.dispose();
+    this._creatures?.dispose();
     this.scene.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       object.geometry.dispose();
@@ -258,11 +288,42 @@ export class LocationView {
     this.renderer.domElement.remove();
   }
 
+  private loadOverpassData(
+    bounds: { south: number; west: number; north: number; east: number },
+    w: import('./terrainWindow.ts').TerrainWindow,
+  ): void {
+    const heightAt = (x: number, z: number) => this.heightAt(x, z);
+    queryRoads(bounds.south, bounds.west, bounds.north, bounds.east)
+      .then((roads) => {
+        this.roads = new Roads(roads, w, heightAt);
+        this.scene.add(this.roads.group);
+      })
+      .catch((e) => console.warn('Roads unavailable:', e));
+    queryPOIs(bounds.south, bounds.west, bounds.north, bounds.east)
+      .then((pois) => {
+        this.poiLabels = new POILabels(pois, w, heightAt);
+        this.scene.add(this.poiLabels.group);
+      })
+      .catch((e) => console.warn('POI labels unavailable:', e));
+  }
+
+  private loadWildlife(lat: number, lon: number): void {
+    fetchNearbySpecies(lat, lon, { aquatic: this.hasSea })
+      .then((species) => {
+        this._creatures = new CreatureSystem(species, this.world);
+        this.scene.add(this._creatures.group);
+      })
+      .catch((e) => console.warn('Wildlife unavailable:', e));
+  }
+
   private frame(timeMs: number): void {
     const dt = this.lastFrameMs === null ? 0 : Math.min(0.1, (timeMs - this.lastFrameMs) / 1000);
     this.lastFrameMs = timeMs;
     this.onFrame?.(dt);
     this.vegetation.update(this.focus.x, this.focus.z);
+    this.buildings?.update();
+    this.poiLabels?.update(this.camera.position);
+    this._creatures?.update(dt, this.focus.x, this.focus.z);
     // The sun's shadow box follows the player.
     this.sunLight.target.position.copy(this.focus);
     this.sunLight.position.copy(this.focus).addScaledVector(this.sunDirection, 400);

@@ -19,6 +19,7 @@
     "build-player-model": "node scripts/build-player-model.mjs"
   },
   "dependencies": {
+    "3d-tiles-renderer": "^0.5.4",
     "three": "^0.187.0",
     "three-slippy-map-globe": "^1.0.6"
   },

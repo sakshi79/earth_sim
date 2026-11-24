@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SEA_LEVEL, turnToward, type PlayerState, type WorldQuery } from './movement.ts';
 
-export type CameraMode = 'follow' | 'scout';
+export type CameraMode = 'follow' | 'scout' | 'documentary';
 
 const MIN_DISTANCE = 2;
 const MAX_DISTANCE = 15;
@@ -14,6 +14,11 @@ const MAX_PITCH = 1.3;
 const SWING_DELAY = 1.5;
 const SCOUT_MIN_HEIGHT = 2;
 const SCOUT_MAX_HEIGHT = 2000;
+
+type ShotType = 'establishing' | 'tracking' | 'low' | 'orbit';
+const SHOT_DURATION_MIN = 6;
+const SHOT_DURATION_MAX = 12;
+const SHOT_TYPES: ShotType[] = ['establishing', 'tracking', 'low', 'orbit'];
 
 export interface ScoutInput {
   x: number;
@@ -41,6 +46,11 @@ export class CameraRig {
   // Scout: free look.
   private scoutYaw = 0;
   private scoutPitch = -0.3;
+  // Documentary: auto-cutting between shot types.
+  private docShot: ShotType = 'establishing';
+  private docTimer = 0;
+  private docAngle = 0;
+  private readonly docPos = new THREE.Vector3();
 
   constructor(camera: THREE.PerspectiveCamera, world: WorldQuery, hasSea: boolean, player: PlayerState) {
     this.camera = camera;
@@ -109,7 +119,7 @@ export class CameraRig {
       this.yaw = turnToward(this.yaw, player.heading + Math.PI, dt * 1.4 * Math.min(1, player.speed / 2));
     }
     // Settle slowly from the establishing shot, quickly after that.
-    const rate = this.settling ? 0.9 : 8;
+    const rate = this.settling ? 1.4 : 8;
     this.distance += (this.targetDistance - this.distance) * (1 - Math.exp(-dt * rate));
     if (this.settling && Math.abs(this.distance - this.targetDistance) < 0.3) this.settling = false;
 

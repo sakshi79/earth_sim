@@ -61,13 +61,15 @@ The local scene uses metres, centred on the chosen point, Y up, built from Web M
 
 ## 5. Data sources
 
-Browser access (CORS) verified 2026-11-22. All keyless except Esri (D3). Endpoints live in `config.ts`.
+Browser access (CORS) verified 2026-11-22. All keyless except Esri and Cesium (D3, D10). Endpoints live in `config.ts`.
 
 | Data | Source | Licence / limits |
 |---|---|---|
 | Elevation and sea floor | AWS Terrain Tiles (Terrarium) | Open data; credit sources |
 | Imagery, live | Esri World Imagery via ArcGIS Location Platform, key locked to our site | Esri terms; "Powered by Esri" + source credit; 2M tiles/month free |
 | Imagery, pre-built places and fallback | EOX Sentinel-2 cloudless 2025 | CC BY-NC-SA 4.0: non-commercial re-hosting allowed, and files made from it carry the same licence; ~10 m/px |
+| 3D buildings | Cesium OSM Buildings (3D Tiles), via free Cesium ion token | CC BY 4.0 / ODbL; ~1.1B buildings globally |
+| Roads and POIs | Overpass API (OpenStreetMap) | ODbL; ≤ 2 concurrent; keyless |
 | Species and photos | iNaturalist API v1 | ≤ 1 req/s; each photo's licence and credit shown |
 | Species descriptions | Wikipedia REST summary | CC BY-SA |
 | Place names, search | Nominatim (OpenStreetMap) | ≤ 1 req/s, no search-as-you-type; ODbL |
@@ -89,7 +91,11 @@ Every request goes through an adapter with caching, per-host rate limits and gra
 
 **Landscape type.** Rule-based, from latitude, elevation, relief, slope, water fraction and imagery colour. Types: ocean/reef, ice, mountain, valley/canyon, coast, desert, rainforest, boreal forest, temperate forest, tundra, grassland. First match wins; thresholds tuned in M4 against the featured places. Drives vegetation, sky tint and which activities are offered.
 
-**Vegetation.** Instanced low-poly trees, palms, cacti, shrubs, grass and rocks; kelp and coral underwater. Placed deterministically where the imagery is green, limited by slope and treeline. Budgets, centred on the camera: trees 25k within 2 km, shrubs 15k within 600 m, grass 40k within 150 m.
+**Vegetation.** Instanced low-poly trees, palms, cacti, shrubs, grass and rocks; coral underwater. Placed deterministically where the imagery is green, limited by slope and treeline. Each kind has its own cell size, radius and capacity (e.g. grass 12k within 55 m, trees 3–8k within ~1 km). Colours are tinted from the satellite imagery. Sun shadows on vegetation that casts them (trees, shrubs, rocks). The player collides with rocks and tree trunks (push-out).
+
+**Buildings.** Real 3D buildings from Cesium OSM Buildings (3D Tiles), streamed when a Cesium ion token is configured. LOD1 extruded boxes with heights, covering ~1.1B buildings worldwide. Buildings cast and receive shadows. Without a token, the scene loads normally without buildings.
+
+**Roads and POI labels.** OSM roads from Overpass API, drawn as flat ribbons on the terrain, styled by type (motorway, residential, path, etc.). Named points of interest (peaks, viewpoints, villages, landmarks) float as text labels above the terrain. Both load in the background after the terrain is ready; failures are silent.
 
 **Wildlife.**
 - Top 40 iNaturalist species within 15 km (30 km on water), widened up to 100 km if sparse.
@@ -160,12 +166,12 @@ Coordinates to be checked in M1.
 | M0 | Setup | Scaffold, tests, Pages workflow, globe assets, Esri account and site-locked key; spinning globe live |
 | M1 | Globe | Day/night, atmosphere, tiled zoom, picking, search, featured list, preview, deep links, reset |
 | M2 | Terrain | Tiles → mesh + imagery, sky, sea, fly-down loading, back to globe; featured places pre-built |
-| M3 | Player and camera | Animated character; walk/run/jump/swim/dive; keyboard/mouse and touch controls; Follow and Scout; HUD; time slider |
-| M4 | Landscapes | Classifier tuned; vegetation; detail textures |
-| M5 | Wildlife and collection | Creatures, observing, species card, collection journal with rarity points, place goals and stars, badges, Documentary camera |
+| M3 | Player and camera | Animated character; walk/run/jump/swim/dive; keyboard/mouse and touch controls; Follow and Scout; HUD; time slider; vegetation and ground detail (pulled from M4); sun shadows; vegetation collision |
+| M4 | Landscapes and infrastructure | Classifier tuned; 3D buildings (Cesium OSM Buildings); roads and POI labels (Overpass); remaining vegetation polish |
+| M5 | Wildlife and collection | Creatures ✓, observing ✓, species card ✓, collection journal ✓; remaining: rarity points, place goals and stars, badges, Documentary camera |
 | M6 | Activities | Climbing and diving with stamina, oxygen, checkpoints, failing and retrying, best times; sound and feedback effects |
 | M7 | Launch | Settings, performance (including phones at Low quality), error states, credits, smoke tests, public release |
-| M8+ | Later | Trekking, character choice, first-person photo view, photo mode and clip recording, sharper imagery near the player, ambient audio, weather, fully stylised look |
+| M8+ | Later | Trekking, character choice, first-person photo view, photo mode and clip recording, sharper imagery near the player, ambient audio, weather, fully stylised look, Google Photorealistic 3D Tiles (D11) |
 | Later | Accounts and sync | Journal and progress saved across devices and safe from cleared browser data; leaderboards; shared saved trips; multiplayer. Needs a backend (section 9). A higher priority now that the focus is game-like. |
 | Later | Server-side terrain prep | Pre-built terrain for any place a player picks, not only featured places, so slow devices load faster everywhere. Needs a server with a cache (section 9). |
 
@@ -203,3 +209,5 @@ None. The project owner creates and manages the GitHub repository, and any repo 
 - **D9 Player model.** Quaternius' Universal Animation Library (CC0): one mannequin with idle, walk, jog, sprint, jump, swim and crouch animations on one rig. It has no climbing animation, so the climbing activity (M6) needs one from another CC0 pack on the same rig, or a code-driven pose.
 - **D7 Recording.** Left out of the MVP. Photo mode and clip recording stay on the later list.
 - **D8 Phones.** Mobile browsers are supported in the MVP with on-screen touch controls built alongside keyboard and mouse in M3, and phone performance is tuned in M7 at Low quality.
+- **D10 3D buildings.** Cesium OSM Buildings via `3d-tiles-renderer` (NASA JPL). Free Cesium ion account provides a public-facing token (like the Esri key). LOD1 boxes, global coverage. Roads and POIs from Overpass API (keyless). Both are optional: buildings need a token; roads/POIs fail silently if the API is unavailable.
+- **D11 Google Photorealistic 3D Tiles (later).** Full textured 3D cities via Google Maps Platform. Needs a Google Cloud billing account; first $200/month free. Far higher fidelity than OSM buildings but only in supported cities. Planned as an optional upgrade over Cesium buildings.

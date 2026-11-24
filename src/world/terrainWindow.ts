@@ -86,6 +86,21 @@ export function localToPixel(w: TerrainWindow, x: number, z: number): { px: numb
   return { px: x / w.metresPerPixel + w.originPx.x, py: z / w.metresPerPixel + w.originPx.y };
 }
 
+/** Local metres (x east, z south) of a geographic point. */
+export function latLonToLocal(w: TerrainWindow, lat: number, lon: number): { x: number; z: number } {
+  const { x, y } = lonLatToTile(lon, lat, w.zoom);
+  const px = (x - w.x0) * TILE_SIZE;
+  const py = (y - w.y0) * TILE_SIZE;
+  return pixelToLocal(w, px, py);
+}
+
+/** Bounding box of the terrain window in geographic coordinates (degrees). */
+export function windowBounds(w: TerrainWindow): { south: number; west: number; north: number; east: number } {
+  const nw = windowPixelToLatLon(w, 0, 0);
+  const se = windowPixelToLatLon(w, w.sizePx, w.sizePx);
+  return { south: se.lat, west: nw.lon, north: nw.lat, east: se.lon };
+}
+
 /** Bilinear sample of a row-major grid at fractional cell coordinates, clamped to the edges. */
 export function sampleGrid(grid: ArrayLike<number>, width: number, height: number, gx: number, gy: number): number {
   const x = Math.min(width - 1, Math.max(0, gx));

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { SpeciesCard } from '../ui/speciesCard.ts';
 import type { LocationView } from '../world/LocationView.ts';
 import { CameraRig, type CameraMode } from './cameraRig.ts';
 import { Input } from './input.ts';
@@ -38,6 +39,7 @@ export class Exploration {
   private readonly state: PlayerState;
   private readonly rig: CameraRig;
   private readonly marker: THREE.Mesh;
+  private readonly speciesCard: SpeciesCard;
   private observeLeft = 0;
   private hudLeft = 0;
 
@@ -50,6 +52,7 @@ export class Exploration {
     this.rig = new CameraRig(view.camera, view.world, view.hasSea, this.state);
     this.input = new Input(view.domElement);
     this.marker = createMarker();
+    this.speciesCard = new SpeciesCard(view.domElement.parentElement!);
     view.scene.add(player.object, this.marker);
     hud.setCameraMode(this.rig.mode);
     view.onFrame = (dt) => this.frame(dt);
@@ -63,6 +66,7 @@ export class Exploration {
     this.view.onFrame = null;
     this.input.dispose();
     this.player.dispose();
+    this.speciesCard.hide();
     this.marker.removeFromParent();
   }
 
@@ -73,16 +77,21 @@ export class Exploration {
     this.rig.orbit(drag.dx, drag.dy);
     this.rig.zoom(input.takeZoom());
     if (input.wasPressed('KeyV')) this.hud.setCameraMode(this.rig.toggle(this.state));
-    if (input.wasPressed('KeyE') && this.state.mode === 'ground') this.observeLeft = OBSERVE_SECONDS;
+    if (input.wasPressed('KeyE') && this.state.mode === 'ground') {
+      this.observeLeft = OBSERVE_SECONDS;
+      this.tryObserveCreature();
+    }
     this.observeLeft = Math.max(0, this.observeLeft - dt);
 
     const move = input.move();
     if (this.rig.mode === 'follow') {
       const controls = this.observeLeft > 0 ? IDLE : { ...move, run: input.run(), up: input.up(), down: input.down() };
       stepPlayer(this.state, { ...controls, forward: this.rig.forward() }, dt, this.view.world);
+      this.applyVegetationCollision();
       this.rig.updateFollow(dt, this.state);
     } else {
       stepPlayer(this.state, { ...IDLE, forward: this.rig.forward() }, dt, this.view.world);
+      this.applyVegetationCollision();
       this.rig.updateScout(dt, { ...move, up: input.up(), down: input.down(), fast: input.run() });
       this.handleScoutClicks();
     }
@@ -101,6 +110,23 @@ export class Exploration {
       this.hud.setStatus(this.status());
     }
     input.endFrame();
+  }
+
+  private tryObserveCreature(): void {
+    const creatures = this.view.creatures;
+    if (!creatures) return;
+    const hit = creatures.nearest(this.state.x, this.state.z, 15);
+    if (hit) this.speciesCard.show(hit.species);
+  }
+
+  private applyVegetationCollision(): void {
+    if (this.state.mode === 'swim') return;
+    const pushed = this.view.pushOutOfVegetation(this.state.x, this.state.z, 0.3);
+    if (pushed.x !== this.state.x || pushed.z !== this.state.z) {
+      this.state.x = pushed.x;
+      this.state.z = pushed.z;
+      this.state.y = this.view.world.heightAt(pushed.x, pushed.z);
+    }
   }
 
   /** In the scout camera, a click marks a spot; R (or "Move here") sends the player there. */
