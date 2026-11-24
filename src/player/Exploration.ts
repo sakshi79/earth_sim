@@ -43,7 +43,7 @@ export class Exploration {
   private observeLeft = 0;
   private hudLeft = 0;
 
-  private constructor(view: LocationView, hud: ExplorationHud, player: Player) {
+  private constructor(view: LocationView, hud: ExplorationHud, player: Player, placeName: string) {
     this.view = view;
     this.hud = hud;
     this.player = player;
@@ -53,13 +53,14 @@ export class Exploration {
     this.input = new Input(view.domElement);
     this.marker = createMarker();
     this.speciesCard = new SpeciesCard(view.domElement.parentElement!);
+    this.speciesCard.setPlace(placeName);
     view.scene.add(player.object, this.marker);
     hud.setCameraMode(this.rig.mode);
     view.onFrame = (dt) => this.frame(dt);
   }
 
-  static async start(view: LocationView, hud: ExplorationHud): Promise<Exploration> {
-    return new Exploration(view, hud, await Player.create());
+  static async start(view: LocationView, hud: ExplorationHud, placeName = ''): Promise<Exploration> {
+    return new Exploration(view, hud, await Player.create(), placeName);
   }
 
   dispose(): void {
@@ -89,6 +90,10 @@ export class Exploration {
       stepPlayer(this.state, { ...controls, forward: this.rig.forward() }, dt, this.view.world);
       this.applyVegetationCollision();
       this.rig.updateFollow(dt, this.state);
+    } else if (this.rig.mode === 'documentary') {
+      stepPlayer(this.state, { ...IDLE, forward: this.rig.forward() }, dt, this.view.world);
+      this.applyVegetationCollision();
+      this.rig.updateDocumentary(dt, this.state);
     } else {
       stepPlayer(this.state, { ...IDLE, forward: this.rig.forward() }, dt, this.view.world);
       this.applyVegetationCollision();
@@ -99,8 +104,8 @@ export class Exploration {
 
     this.player.update(dt, this.state, this.observeLeft > 0);
     // Vegetation and sun shadows centre on the player (on the scout camera's ground point when flying).
-    if (this.rig.mode === 'follow') this.view.focus.set(this.state.x, this.state.y, this.state.z);
-    else this.view.focus.set(camera0.x, this.view.world.heightAt(camera0.x, camera0.z), camera0.z);
+    if (this.rig.mode === 'scout') this.view.focus.set(camera0.x, this.view.world.heightAt(camera0.x, camera0.z), camera0.z);
+    else this.view.focus.set(this.state.x, this.state.y, this.state.z);
     const camera = this.view.camera.position;
     this.view.setUnderwater(camera.y < SEA_LEVEL && this.view.world.waterAt(camera.x, camera.z));
 

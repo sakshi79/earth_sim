@@ -168,7 +168,7 @@ Coordinates to be checked in M1.
 | M2 | Terrain | Tiles → mesh + imagery, sky, sea, fly-down loading, back to globe; featured places pre-built |
 | M3 | Player and camera | Animated character; walk/run/jump/swim/dive; keyboard/mouse and touch controls; Follow and Scout; HUD; time slider; vegetation and ground detail (pulled from M4); sun shadows; vegetation collision |
 | M4 | Landscapes and infrastructure | Classifier tuned; 3D buildings (Cesium OSM Buildings); roads and POI labels (Overpass); remaining vegetation polish |
-| M5 | Wildlife and collection | Creatures ✓, observing ✓, species card ✓, collection journal ✓; remaining: rarity points, place goals and stars, badges, Documentary camera |
+| M5 | Wildlife and collection | Creatures, observing, species card, journal with rarity points, place stars, badges, Documentary camera ✓ |
 | M6 | Activities | Climbing and diving with stamina, oxygen, checkpoints, failing and retrying, best times; sound and feedback effects |
 | M7 | Launch | Settings, performance (including phones at Low quality), error states, credits, smoke tests, public release |
 | M8+ | Later | Trekking, character choice, first-person photo view, photo mode and clip recording, sharper imagery near the player, ambient audio, weather, fully stylised look, Google Photorealistic 3D Tiles (D11) |

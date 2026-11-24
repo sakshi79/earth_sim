@@ -224,7 +224,7 @@ async function boot(): Promise<void> {
         ],
         solarHours: location.solarHoursNow,
       });
-      exploration = await Exploration.start(location, locationUi);
+      exploration = await Exploration.start(location, locationUi, title);
       locationUi.attachInput(exploration.input);
       ui.setStatus('');
       state = 'location';

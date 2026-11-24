@@ -96,12 +96,16 @@ export class CameraRig {
 
   toggle(player: PlayerState): CameraMode {
     if (this.mode === 'follow') {
+      this.docTimer = 0;
+      this.docShot = 'establishing';
+      this.docAngle = this.yaw;
+      this.mode = 'documentary';
+    } else if (this.mode === 'documentary') {
       const direction = this.camera.getWorldDirection(new THREE.Vector3());
       this.scoutYaw = Math.atan2(-direction.x, -direction.z);
       this.scoutPitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1));
       this.mode = 'scout';
     } else {
-      // Pick up the chase from wherever the scout camera is, then glide back in.
       const p = this.camera.position;
       this.yaw = Math.atan2(p.x - player.x, p.z - player.z);
       this.distance = Math.min(Math.hypot(p.x - player.x, p.z - player.z, p.y - player.y), ESTABLISHING_DISTANCE);
@@ -160,6 +164,75 @@ export class CameraRig {
     p.z = THREE.MathUtils.clamp(p.z, minZ, maxZ);
     const floor = this.surfaceAt(p.x, p.z);
     p.y = THREE.MathUtils.clamp(p.y, floor + SCOUT_MIN_HEIGHT, floor + SCOUT_MAX_HEIGHT);
+  }
+
+  updateDocumentary(dt: number, player: PlayerState): void {
+    this.docTimer -= dt;
+    if (this.docTimer <= 0) {
+      const next = SHOT_TYPES.filter((s) => s !== this.docShot);
+      this.docShot = next[Math.floor(Math.random() * next.length)];
+      this.docTimer = SHOT_DURATION_MIN + Math.random() * (SHOT_DURATION_MAX - SHOT_DURATION_MIN);
+      this.docAngle = player.heading + Math.PI + (Math.random() - 0.5) * 1.2;
+    }
+
+    const head = new THREE.Vector3(player.x, player.y + 1.6, player.z);
+    const desired = new THREE.Vector3();
+
+    switch (this.docShot) {
+      case 'establishing': {
+        this.docAngle += dt * 0.15;
+        const dist = 60;
+        desired.set(
+          head.x + Math.sin(this.docAngle) * dist,
+          head.y + 35,
+          head.z + Math.cos(this.docAngle) * dist,
+        );
+        break;
+      }
+      case 'tracking': {
+        const behind = player.heading + Math.PI;
+        const dist = 6;
+        desired.set(
+          head.x + Math.sin(behind) * dist,
+          head.y + 1.5,
+          head.z + Math.cos(behind) * dist,
+        );
+        break;
+      }
+      case 'low': {
+        const side = player.heading + Math.PI * 0.6;
+        const dist = 3;
+        const ground = this.world.heightAt(
+          head.x + Math.sin(side) * dist,
+          head.z + Math.cos(side) * dist,
+        );
+        desired.set(
+          head.x + Math.sin(side) * dist,
+          ground + 0.5,
+          head.z + Math.cos(side) * dist,
+        );
+        break;
+      }
+      case 'orbit': {
+        this.docAngle += dt * 0.35;
+        const dist = 10;
+        desired.set(
+          head.x + Math.sin(this.docAngle) * dist,
+          head.y + 2,
+          head.z + Math.cos(this.docAngle) * dist,
+        );
+        break;
+      }
+    }
+
+    desired.y = Math.max(desired.y, this.world.heightAt(desired.x, desired.z) + 0.4);
+    if (this.hasSea && this.world.waterAt(desired.x, desired.z) && !player.underwater) {
+      desired.y = Math.max(desired.y, SEA_LEVEL + 0.4);
+    }
+    this.docPos.lerp(desired, 1 - Math.exp(-dt * 3));
+    this.docPos.y = Math.max(this.docPos.y, this.world.heightAt(this.docPos.x, this.docPos.z) + 0.3);
+    this.camera.position.copy(this.docPos);
+    this.camera.lookAt(head);
   }
 
   /** The ground (or sea surface) point under a canvas pixel, or null for the sky. */

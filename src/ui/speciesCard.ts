@@ -1,11 +1,15 @@
+import { newlyEarned } from '../data/badges.ts';
 import type { NearbySpecies } from '../data/inaturalist.ts';
 import { fetchSpeciesSummary } from '../data/inaturalist.ts';
+import { recordObservation } from '../data/journal.ts';
+import { showToast } from './toast.ts';
 
 const SHOW_DURATION = 6000;
 
 export class SpeciesCard {
   private readonly root: HTMLElement;
   private timer = 0;
+  private placeName = '';
 
   constructor(parent: HTMLElement) {
     this.root = document.createElement('div');
@@ -14,8 +18,11 @@ export class SpeciesCard {
     parent.appendChild(this.root);
   }
 
+  setPlace(name: string): void { this.placeName = name; }
+
   show(species: NearbySpecies): void {
     clearTimeout(this.timer);
+    const { points, isNew } = recordObservation(species, this.placeName);
     const conservation = species.conservation
       ? `<span class="conservation">${esc(species.conservation)}</span>`
       : '';
@@ -25,12 +32,14 @@ export class SpeciesCard {
     const attribution = species.photoAttribution
       ? `<p class="photo-attr">${esc(species.photoAttribution)}</p>`
       : '';
+    const badge = isNew ? '<span class="new-badge">NEW</span> ' : '';
+    const pointsHtml = `<span class="points">+${points} pt${points > 1 ? 's' : ''}</span>`;
 
     this.root.innerHTML =
       `<div class="species-card-inner">` +
       photoHtml +
       `<div class="species-info">` +
-      `<h3>${esc(species.commonName)}</h3>` +
+      `<h3>${badge}${esc(species.commonName)} ${pointsHtml}</h3>` +
       `<p class="sci-name">${esc(species.name)}</p>` +
       `<p class="group-tag">${esc(species.group)}${conservation}</p>` +
       `<p class="summary">Loading...</p>` +
@@ -45,29 +54,14 @@ export class SpeciesCard {
       if (el) el.textContent = summary ? truncate(summary, 200) : 'No description available.';
     });
 
-    this.saveToJournal(species);
+    for (const badge of newlyEarned()) {
+      showToast(`Badge: ${badge.name} — ${badge.description}`, 'badge-toast');
+    }
   }
 
   hide(): void {
     this.root.hidden = true;
     clearTimeout(this.timer);
-  }
-
-  private saveToJournal(species: NearbySpecies): void {
-    try {
-      const key = 'earth-sim-journal';
-      const journal: Record<number, { name: string; commonName: string; group: string; firstSeen: string }> =
-        JSON.parse(localStorage.getItem(key) ?? '{}');
-      if (!journal[species.id]) {
-        journal[species.id] = {
-          name: species.name,
-          commonName: species.commonName,
-          group: species.group,
-          firstSeen: new Date().toISOString(),
-        };
-        localStorage.setItem(key, JSON.stringify(journal));
-      }
-    } catch { /* localStorage unavailable */ }
   }
 }
 

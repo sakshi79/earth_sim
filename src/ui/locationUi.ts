@@ -1,5 +1,6 @@
 // DOM for a visited place: back to the globe, title and HUD, time of day, camera hints, touch
 // controls and credits. Dynamic text always goes through textContent.
+import { placeProgress } from '../data/journal.ts';
 import { formatLatLon } from '../format.ts';
 import type { CameraMode } from '../player/cameraRig.ts';
 import type { ExplorationHud, PlayerStatus } from '../player/Exploration.ts';
@@ -20,7 +21,8 @@ export interface LocationUiHandlers {
 }
 
 const HINTS: Record<CameraMode, string> = {
-  follow: 'WASD move · Shift run · Space jump / rise · C dive · E observe wildlife · drag to look · scroll to zoom · V scout camera · G globe',
+  follow: 'WASD move · Shift run · Space jump / rise · C dive · E observe wildlife · drag to look · scroll to zoom · V documentary · G globe',
+  documentary: 'Auto camera · V scout · G globe',
   scout: 'WASD fly · Space / C up and down · Shift fast · drag to look · click the ground, then R to move the player · V follow · G globe',
 };
 const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -37,9 +39,11 @@ export class LocationUi implements ExplorationHud {
   private readonly hint: HTMLElement;
   private readonly slider: HTMLInputElement;
   private readonly clock: HTMLOutputElement;
+  private readonly progress: HTMLElement;
   private readonly credits: HTMLElement;
   private readonly touch: TouchControls;
   private solarNow = 12;
+  private placeName = '';
 
   constructor(root: HTMLElement, handlers: LocationUiHandlers) {
     this.root = root;
@@ -62,7 +66,8 @@ export class LocationUi implements ExplorationHud {
     this.breathFill = el('div', 'breath-fill');
     this.breath.append(el('span', '', 'Breath'), this.breathFill);
     this.breath.hidden = true;
-    heading.append(this.title, this.subtitle, this.status, this.breath);
+    this.progress = el('p', 'place-progress');
+    heading.append(this.title, this.subtitle, this.status, this.progress, this.breath);
     topbar.append(back, heading);
 
     // Top right: time of day.
@@ -115,6 +120,7 @@ export class LocationUi implements ExplorationHud {
   }
 
   show(info: LocationInfo): void {
+    this.placeName = info.title;
     this.title.textContent = info.title;
     this.subtitle.textContent = info.subtitle;
     this.credits.textContent = info.credits.join(' · ');
@@ -124,6 +130,7 @@ export class LocationUi implements ExplorationHud {
     this.status.textContent = '';
     this.breath.hidden = true;
     this.edge.hidden = true;
+    this.updateProgress();
     this.setCameraMode('follow');
     this.root.hidden = false;
   }
@@ -144,16 +151,25 @@ export class LocationUi implements ExplorationHud {
     this.breath.hidden = s.breath === null;
     if (s.breath !== null) this.breathFill.style.width = `${Math.round(s.breath * 100)}%`;
     this.edge.hidden = !s.atEdge;
+    this.updateProgress();
   }
 
   setCameraMode(mode: CameraMode): void {
-    this.cameraChip.textContent = mode === 'follow' ? 'Follow camera' : 'Scout camera';
+    const names: Record<CameraMode, string> = { follow: 'Follow camera', documentary: 'Documentary camera', scout: 'Scout camera' };
+    this.cameraChip.textContent = names[mode];
     this.hint.textContent = HINTS[mode];
     if (mode === 'follow') this.touch.setMoveHereAvailable(false);
   }
 
   setMoveHereAvailable(available: boolean): void {
     this.touch.setMoveHereAvailable(available);
+  }
+
+  private updateProgress(): void {
+    const p = placeProgress(this.placeName);
+    const stars = Array.from({ length: 3 }, (_, i) =>
+      `<span class="${i < p.stars ? 'star' : 'star-empty'}">★</span>`).join('');
+    this.progress.innerHTML = `${stars} ${p.species} species · ${p.points} pts`;
   }
 
   private showClock(hours: number): void {
